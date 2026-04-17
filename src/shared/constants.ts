@@ -1,0 +1,47 @@
+import type { AppSettings, HotkeyConfig } from './types'
+
+// 사용자 요청: Control+Shift+Z/X/C/V (Mac/Windows 동일)
+// C = 직접 영역 지정 (region)
+export const DEFAULT_HOTKEYS: HotkeyConfig = {
+  region: 'Control+Shift+C',
+  fullscreen: 'Control+Shift+Z',
+  window: 'Control+Shift+X',
+  scroll: 'Control+Shift+V',
+  repeat: ''
+}
+
+export const DEFAULT_SETTINGS: Omit<AppSettings, 'saveFolder'> = {
+  hotkeys: DEFAULT_HOTKEYS,
+  afterCapture: 'editor',
+  fileFormat: 'png',
+  filenamePattern: 'capture_{YYYY}{MM}{DD}_{HH}{mm}{ss}'
+}
+
+export const IPC = {
+  // Main → Renderer
+  OVERLAY_INIT: 'overlay:init',
+  EDITOR_INIT: 'editor:init',
+  SETTINGS_INIT: 'settings:init',
+
+  // Renderer → Main
+  OVERLAY_SELECT: 'overlay:select',
+  OVERLAY_CANCEL: 'overlay:cancel',
+
+  EDITOR_SAVE: 'editor:save',
+  EDITOR_COPY: 'editor:copy',
+  EDITOR_CLOSE: 'editor:close',
+
+  SETTINGS_GET: 'settings:get',
+  SETTINGS_SET: 'settings:set',
+  SETTINGS_PICK_FOLDER: 'settings:pickFolder',
+
+  CAPTURE_REGION: 'capture:region',
+  CAPTURE_FULLSCREEN: 'capture:fullscreen',
+  CAPTURE_WINDOW: 'capture:window',
+  CAPTURE_SCROLL: 'capture:scroll',
+  CAPTURE_LIST_WINDOWS: 'capture:listWindows',
+
+  SCROLL_ADD_FRAME: 'scroll:addFrame',
+  SCROLL_DONE: 'scroll:done',
+  SCROLL_CANCEL: 'scroll:cancel'
+} as const
