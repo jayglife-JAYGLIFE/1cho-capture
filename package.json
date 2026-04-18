@@ -37,6 +37,7 @@
   "build": {
     "appId": "com.jungi.onesecondcapture",
     "productName": "1초캡처",
+    "artifactName": "1cho-capture-${version}-${os}-${arch}.${ext}",
     "directories": {
       "output": "release/${version}"
     },
