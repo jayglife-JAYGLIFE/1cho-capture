@@ -5,7 +5,15 @@ import { openEditorWithImage, getLastCapture } from './windows/editor'
 import { openRegionOverlay } from './windows/overlay'
 import { startScrollCapture } from './capture/scroll'
 
-export function registerHotkeys(cfg: HotkeyConfig): void {
+/**
+ * 단축키 등록 결과. `failed`는 다른 앱과 충돌해서 등록되지 못한 단축키 문자열 배열.
+ * 트레이 UI에서 경고 표시에 활용.
+ */
+export interface RegisterResult {
+  failed: string[]
+}
+
+export function registerHotkeys(cfg: HotkeyConfig): RegisterResult {
   globalShortcut.unregisterAll()
 
   const failed: string[] = []
@@ -30,8 +38,9 @@ export function registerHotkeys(cfg: HotkeyConfig): void {
   })
 
   if (failed.length > 0) {
-    console.warn('[hotkey] 등록 실패:', failed.join(', '), '(설정에서 변경하세요)')
+    console.warn('[hotkey] 등록 실패:', failed.join(', '), '(다른 앱과 충돌)')
   }
+  return { failed }
 }
 
 function safeRegister(accelerator: string, handler: () => void | Promise<void>): boolean {

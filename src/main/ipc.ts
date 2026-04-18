@@ -50,11 +50,16 @@ export function registerIpcHandlers(): void {
   // ---------- Settings ----------
   ipcMain.handle(IPC.SETTINGS_GET, () => getSettings())
 
-  ipcMain.handle(IPC.SETTINGS_SET, (_, patch: Partial<AppSettings>) => {
+  ipcMain.handle(IPC.SETTINGS_SET, async (_, patch: Partial<AppSettings>) => {
     const next = setSettings(patch)
-    // Re-register hotkeys if they changed
+    // 단축키 변경 시 재등록 + 트레이 경고 업데이트
     if (patch.hotkeys) {
-      import('./hotkey').then((m) => m.registerHotkeys(next.hotkeys))
+      const [{ registerHotkeys }, { setHotkeyFailureBadge }] = await Promise.all([
+        import('./hotkey'),
+        import('./tray')
+      ])
+      const { failed } = registerHotkeys(next.hotkeys)
+      setHotkeyFailureBadge(failed)
     }
     return next
   })
