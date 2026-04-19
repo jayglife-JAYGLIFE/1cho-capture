@@ -1,4 +1,5 @@
 import { Tray, Menu, MenuItemConstructorOptions, nativeImage, app } from 'electron'
+// v0.5.1: 트레이 툴팁에 현재 버전을 표시해 자동 업데이트 적용 여부를 한눈에 확인
 import path from 'node:path'
 import { openRegionOverlay } from './windows/overlay'
 import { captureFullScreen } from './capture'
@@ -21,7 +22,7 @@ export function createTray(): Tray {
   if (process.platform === 'darwin') icon.setTemplateImage(true)
 
   tray = new Tray(icon)
-  tray.setToolTip('1초캡처')
+  tray.setToolTip(`1초캡처 v${app.getVersion()}`)
   rebuildMenu()
   return tray
 }
@@ -45,6 +46,10 @@ export function rebuildMenu(): void {
   if (!tray) return
 
   const items: MenuItemConstructorOptions[] = []
+
+  // v0.5.1: 버전 라벨 (비활성 항목, 자동 업데이트 적용 여부 한눈에 확인용)
+  items.push({ label: `1초캡처 v${app.getVersion()}`, enabled: false })
+  items.push({ type: 'separator' })
 
   // 단축키 충돌 경고 배너
   if (hotkeyFailures.length > 0) {
