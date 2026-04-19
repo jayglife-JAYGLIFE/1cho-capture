@@ -1,24 +1,27 @@
 import { BrowserWindow, Display, screen } from 'electron'
 import path from 'node:path'
-import { captureAllDisplaysForOverlay } from '../capture'
+import { captureRegion } from '../capture'
 import { IPC } from '../../shared/constants'
 import type { RegionSelection } from '../../shared/types'
 import { openEditorWithImage } from './editor'
 
 /**
- * 성능 최적화 (v0.3.0): 오버레이 창은 앱 시작 시 디스플레이별로 1개씩 미리 생성해두고
- * 숨김 상태로 유지한다. 단축키가 눌리면 배경 이미지만 갈아끼우고 show() 한다.
- * 이전 버전처럼 매번 new BrowserWindow() 하지 않으므로 체감 지연이 수백 ms 사라진다.
+ * v0.3.1 UX 개편: 맥 Cmd+Shift+4 처럼 "라이브 화면" 위에 투명 오버레이만 띄우고,
+ * 드래그가 끝나면 오버레이를 숨긴 뒤 해당 영역만 네이티브로 캡처한다.
+ *
+ * 이전 v0.3.0은 단축키 누를 때 전체 화면을 먼저 스냅샷으로 찍어 그 이미지 위에 드래그를
+ * 받았기에, 순간적으로 화면이 정지/배율 살짝 어긋남 등 어색함이 있었다.
+ *
+ * 창 예열 자체는 유지 — 지연은 여전히 ~50ms 수준.
  */
 
 interface OverlayEntry {
   window: BrowserWindow
   displayId: number
-  ready: boolean // did-finish-load 완료 여부
+  ready: boolean
 }
 
 const entries: OverlayEntry[] = []
-let pendingDisplays: Awaited<ReturnType<typeof captureAllDisplaysForOverlay>> = []
 let isOpen = false
 
 function buildOverlayWindow(d: Display): OverlayEntry {
@@ -65,14 +68,12 @@ function buildOverlayWindow(d: Display): OverlayEntry {
   return entry
 }
 
-/** 앱 시작 시 호출: 모든 디스플레이에 대해 오버레이 창을 미리 생성. */
 export function prewarmOverlayWindows(): void {
   disposeAllOverlays()
   for (const d of screen.getAllDisplays()) {
     entries.push(buildOverlayWindow(d))
   }
 
-  // 디스플레이가 연결/해제되면 오버레이 창도 재구성
   screen.on('display-added', (_, d) => {
     entries.push(buildOverlayWindow(d))
   })
@@ -105,34 +106,28 @@ async function waitForReady(entry: OverlayEntry, timeoutMs = 2000): Promise<void
   })
 }
 
-/** 단축키 호출 진입점: 캡처 후 배경을 갈아끼우고 show. */
+/** 단축키 진입점: 라이브 화면 위에 투명 오버레이 즉시 표시. */
 export async function openRegionOverlay(): Promise<void> {
   if (isOpen) return
   isOpen = true
 
   try {
-    // 창이 아직 없으면 (극히 드문 케이스 - 예열 전에 호출) 즉시 생성
     if (entries.length === 0) {
       for (const d of screen.getAllDisplays()) {
         entries.push(buildOverlayWindow(d))
       }
     }
 
-    const displayShots = await captureAllDisplaysForOverlay()
-    pendingDisplays = displayShots
-
-    // 각 디스플레이 오버레이에 배경 이미지 갈아끼우고 표시
+    // 배경 사전 캡처 없음 — 바로 표시
     for (const entry of entries) {
-      const shot = displayShots.find((s) => s.displayId === entry.displayId)
-      if (!shot) continue
       await waitForReady(entry)
       if (entry.window.isDestroyed()) continue
       const display = screen.getAllDisplays().find((d) => d.id === entry.displayId)
+      if (!display) continue
       entry.window.webContents.send(IPC.OVERLAY_INIT, {
         displayId: entry.displayId,
-        bounds: display?.bounds ?? shot.bounds,
-        scaleFactor: display?.scaleFactor ?? shot.scaleFactor,
-        backgroundDataUrl: shot.dataUrl
+        bounds: display.bounds,
+        scaleFactor: display.scaleFactor
       })
       entry.window.showInactive()
       entry.window.focus()
@@ -143,7 +138,6 @@ export async function openRegionOverlay(): Promise<void> {
   }
 }
 
-/** 오버레이 숨기기 (destroy 아님 — 재사용 위해 유지). */
 export function closeAllOverlays(): void {
   for (const e of entries) {
     if (!e.window.isDestroyed() && e.window.isVisible()) {
@@ -153,27 +147,27 @@ export function closeAllOverlays(): void {
   isOpen = false
 }
 
+/**
+ * 드래그 완료 → 오버레이 숨긴 후 해당 영역만 네이티브 캡처.
+ * 오버레이 자체가 스크린샷에 찍히지 않도록 hide 후 짧게 대기 (OS 렌더링 반영).
+ */
 export async function handleOverlaySelection(selection: RegionSelection): Promise<void> {
-  const shot = pendingDisplays.find((s) => s.displayId === selection.displayId)
   closeAllOverlays()
-  if (!shot) return
 
-  const croppedDataUrl = await cropDataUrl(shot.dataUrl, selection, shot.scaleFactor)
-  await openEditorWithImage({ dataUrl: croppedDataUrl, width: 0, height: 0 })
-}
+  const display = screen.getAllDisplays().find((d) => d.id === selection.displayId)
+  if (!display) return
 
-async function cropDataUrl(
-  dataUrl: string,
-  sel: { x: number; y: number; width: number; height: number },
-  scaleFactor: number
-): Promise<string> {
-  const { nativeImage } = await import('electron')
-  const img = nativeImage.createFromDataURL(dataUrl)
-  const cropped = img.crop({
-    x: Math.round(sel.x * scaleFactor),
-    y: Math.round(sel.y * scaleFactor),
-    width: Math.max(1, Math.round(sel.width * scaleFactor)),
-    height: Math.max(1, Math.round(sel.height * scaleFactor))
-  })
-  return cropped.toDataURL()
+  // 오버레이가 실제 화면에서 사라지기까지 OS 렌더링 반영 대기.
+  // macOS는 보통 16~32ms면 충분, Windows는 DWM 합성 때문에 50~80ms 권장.
+  await new Promise((r) => setTimeout(r, process.platform === 'win32' ? 100 : 60))
+
+  const absX = display.bounds.x + selection.x
+  const absY = display.bounds.y + selection.y
+
+  try {
+    const result = await captureRegion(absX, absY, selection.width, selection.height)
+    await openEditorWithImage(result)
+  } catch (e) {
+    console.error('[overlay] captureRegion', e)
+  }
 }

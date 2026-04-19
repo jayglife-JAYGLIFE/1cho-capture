@@ -6,7 +6,6 @@ export interface OverlayBridge {
       displayId: number
       bounds: { x: number; y: number; width: number; height: number }
       scaleFactor: number
-      backgroundDataUrl: string
     }) => void
   ) => void
   submit: (sel: RegionSelection) => Promise<void>

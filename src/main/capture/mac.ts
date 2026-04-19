@@ -20,6 +20,29 @@ export async function captureFullScreenMac(): Promise<Buffer> {
   return buf
 }
 
+/**
+ * Capture a specific region of the screen using macOS `screencapture -R`.
+ * 좌표는 virtual screen 기준 logical points (Retina 자동 처리).
+ * 캡처 당시 화면에 보이는 모든 윈도우가 포함되므로, 호출 전에 오버레이 창이 hide 상태여야 한다.
+ */
+export async function captureRegionMac(
+  x: number,
+  y: number,
+  w: number,
+  h: number
+): Promise<Buffer> {
+  const p = tmpPng()
+  await execFileP('/usr/sbin/screencapture', [
+    '-x', // no sound
+    '-R',
+    `${Math.round(x)},${Math.round(y)},${Math.round(w)},${Math.round(h)}`,
+    p
+  ])
+  const buf = await fs.readFile(p)
+  await fs.unlink(p).catch(() => undefined)
+  return buf
+}
+
 /** Capture all displays separately. Returns Buffer[] in display order. */
 export async function captureAllDisplaysMac(): Promise<Buffer[]> {
   // screencapture -x file1.png file2.png ... for each display in order

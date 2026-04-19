@@ -1,6 +1,6 @@
 import { desktopCapturer, screen } from 'electron'
-import { captureFullScreenMac } from './mac'
-import { captureFullScreenWin } from './win'
+import { captureFullScreenMac, captureRegionMac } from './mac'
+import { captureFullScreenWin, captureRegionWin } from './win'
 import type { CaptureResult, WindowSource } from '../../shared/types'
 
 const isMac = process.platform === 'darwin'
@@ -28,6 +28,42 @@ function bufferToResult(buf: Buffer): CaptureResult {
   const dataUrl = `data:image/png;base64,${buf.toString('base64')}`
   // width/height are filled by renderer after load; main doesn't parse PNG header
   return { dataUrl, width: 0, height: 0 }
+}
+
+/**
+ * 특정 영역만 캡처 (v0.3.1+).
+ * 좌표는 virtual screen 기준 logical pixels.
+ * 호출 전에 오버레이 창이 반드시 숨겨져 있어야 함.
+ */
+export async function captureRegion(
+  x: number,
+  y: number,
+  w: number,
+  h: number
+): Promise<CaptureResult> {
+  let buf: Buffer
+  if (isMac) {
+    buf = await captureRegionMac(x, y, w, h)
+  } else if (isWin) {
+    buf = await captureRegionWin(x, y, w, h)
+  } else {
+    // Linux fallback: 전체 화면 캡처 후 Electron nativeImage.crop 사용
+    const { nativeImage } = await import('electron')
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: { width: 4096, height: 4096 }
+    })
+    const full = sources[0].thumbnail
+    const cropped = full.crop({
+      x: Math.round(x),
+      y: Math.round(y),
+      width: Math.max(1, Math.round(w)),
+      height: Math.max(1, Math.round(h))
+    })
+    return { dataUrl: cropped.toDataURL(), width: Math.round(w), height: Math.round(h) }
+  }
+  const dataUrl = `data:image/png;base64,${buf.toString('base64')}`
+  return { dataUrl, width: Math.round(w), height: Math.round(h) }
 }
 
 /** Capture primary display only, returns data URL. */
