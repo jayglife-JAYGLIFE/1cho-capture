@@ -32,13 +32,39 @@ export function Editor(): JSX.Element {
       const image = new Image()
       image.onload = () => {
         setImg(image)
-        setMosaicImg(makeMosaicCanvas(image, 14))
+        setMosaicImg(null) // v0.6.0: 모자이크는 lazy 계산 (실제 툴 선택 시에만)
         setShapes([])
         setRedoStack([])
+        // main process에게 "이미지 로드 완료 — 창 show 해도 됨" 신호
+        try {
+          window.editor.readyToShow?.()
+        } catch {
+          /* older preload */
+        }
       }
-      image.src = data.dataUrl
+      image.onerror = () => {
+        // 혹시 실패해도 창은 띄워야 함
+        try {
+          window.editor.readyToShow?.()
+        } catch {
+          /* ignore */
+        }
+      }
+      // v0.6.0: filePath 우선 (file:// URL), 없으면 dataUrl 폴백
+      const src = data.filePath ? `file://${data.filePath.replace(/\\/g, '/')}` : (data.dataUrl ?? '')
+      image.src = src
     })
   }, [])
+
+  // v0.6.0: 모자이크 캔버스는 처음 모자이크 툴 선택 시에만 한 번 계산
+  useEffect(() => {
+    if (tool !== 'mosaic' || !img || mosaicImg) return
+    // 다음 프레임으로 밀어서 UI 스레드 블록 최소화
+    const timer = setTimeout(() => {
+      setMosaicImg(makeMosaicCanvas(img, 14))
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [tool, img, mosaicImg])
 
   // Compute stage size to fit the window and image
   useEffect(() => {

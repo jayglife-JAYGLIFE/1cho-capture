@@ -1,4 +1,7 @@
 import { desktopCapturer, screen } from 'electron'
+import { promises as fs } from 'node:fs'
+import path from 'node:path'
+import os from 'node:os'
 import { captureFullScreenMac, captureRegionMac } from './mac'
 import { captureFullScreenWin, captureRegionWin } from './win'
 import type { CaptureResult, WindowSource } from '../../shared/types'
@@ -14,7 +17,6 @@ export async function captureFullScreen(): Promise<CaptureResult> {
   } else if (isWin) {
     buf = await captureFullScreenWin()
   } else {
-    // Linux fallback via desktopCapturer
     const sources = await desktopCapturer.getSources({
       types: ['screen'],
       thumbnailSize: { width: 4096, height: 4096 }
@@ -24,16 +26,36 @@ export async function captureFullScreen(): Promise<CaptureResult> {
   return bufferToResult(buf)
 }
 
-function bufferToResult(buf: Buffer): CaptureResult {
-  const dataUrl = `data:image/png;base64,${buf.toString('base64')}`
-  // width/height are filled by renderer after load; main doesn't parse PNG header
-  return { dataUrl, width: 0, height: 0 }
+/**
+ * v0.6.0+: 캡처 버퍼를 임시 파일로 저장해 경로를 반환한다.
+ * base64 직렬화 + IPC 전송 + 파싱의 비용을 없애 편집기 표시 지연이 크게 줄어든다.
+ */
+async function bufferToResult(buf: Buffer): Promise<CaptureResult> {
+  const tmpPath = path.join(
+    os.tmpdir(),
+    `1cho_cap_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.png`
+  )
+  await fs.writeFile(tmpPath, buf)
+  return { filePath: tmpPath, width: 0, height: 0 }
+}
+
+/** 앱 시작 시 이전 실행에서 남은 임시 캡처 파일 정리. */
+export async function cleanupTempCaptures(): Promise<void> {
+  try {
+    const dir = os.tmpdir()
+    const names = await fs.readdir(dir)
+    await Promise.all(
+      names
+        .filter((n) => /^1cho_cap_\d+_[a-z0-9]+\.png$/.test(n))
+        .map((n) => fs.unlink(path.join(dir, n)).catch(() => undefined))
+    )
+  } catch {
+    /* ignore */
+  }
 }
 
 /**
- * 특정 영역만 캡처 (v0.3.1+).
- * 좌표는 virtual screen 기준 logical pixels.
- * 호출 전에 오버레이 창이 반드시 숨겨져 있어야 함.
+ * 특정 영역만 캡처 (v0.3.1+). v0.6.0부터는 임시 파일 경로로 반환.
  */
 export async function captureRegion(
   x: number,
@@ -47,7 +69,6 @@ export async function captureRegion(
   } else if (isWin) {
     buf = await captureRegionWin(x, y, w, h)
   } else {
-    // Linux fallback: 전체 화면 캡처 후 Electron nativeImage.crop 사용
     const { nativeImage } = await import('electron')
     const sources = await desktopCapturer.getSources({
       types: ['screen'],
@@ -60,13 +81,15 @@ export async function captureRegion(
       width: Math.max(1, Math.round(w)),
       height: Math.max(1, Math.round(h))
     })
-    return { dataUrl: cropped.toDataURL(), width: Math.round(w), height: Math.round(h) }
+    buf = cropped.toPNG()
   }
-  const dataUrl = `data:image/png;base64,${buf.toString('base64')}`
-  return { dataUrl, width: Math.round(w), height: Math.round(h) }
+  const res = await bufferToResult(buf)
+  res.width = Math.round(w)
+  res.height = Math.round(h)
+  return res
 }
 
-/** Capture primary display only, returns data URL. */
+/** Capture primary display only. */
 export async function capturePrimaryDisplay(): Promise<CaptureResult> {
   if (isMac) {
     const buf = await captureFullScreenMac()

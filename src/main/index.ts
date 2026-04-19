@@ -11,6 +11,8 @@ import {
   showToolbar
 } from './windows/toolbar'
 import { setupAutoUpdater } from './updater'
+import { cleanupTempCaptures } from './capture'
+import { prewarmPowerShell, destroyPowerShell } from './capture/win'
 import { promises as fs } from 'node:fs'
 
 // Single instance
@@ -36,6 +38,14 @@ app.whenReady().then(async () => {
     await fs.mkdir(getSettings().saveFolder, { recursive: true })
   } catch {
     // ignore
+  }
+
+  // v0.6.0: 이전 실행에서 남은 임시 캡처 파일 정리
+  cleanupTempCaptures()
+
+  // v0.6.0: Windows에서 PowerShell 세션 프리워밍
+  if (process.platform === 'win32') {
+    prewarmPowerShell()
   }
 
   registerIpcHandlers()
@@ -75,6 +85,8 @@ app.on('before-quit', () => {
   // close preventDefault 걸려있는 창들 종료 전에 명시 해제
   destroyEditorWindow()
   destroyToolbarWindow()
+  // v0.6.0: PowerShell 세션 정리
+  if (process.platform === 'win32') destroyPowerShell()
 })
 
 app.on('will-quit', () => {

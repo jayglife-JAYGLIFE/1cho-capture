@@ -8,7 +8,8 @@ const bridge: EditorBridge = {
   },
   save: (dataUrl, format) => ipcRenderer.invoke(IPC.EDITOR_SAVE, { dataUrl, format }),
   copy: (dataUrl) => ipcRenderer.invoke(IPC.EDITOR_COPY, dataUrl),
-  close: () => ipcRenderer.invoke(IPC.EDITOR_CLOSE)
+  close: () => ipcRenderer.invoke(IPC.EDITOR_CLOSE),
+  readyToShow: () => ipcRenderer.send('editor:ready-to-show')
 }
 
 contextBridge.exposeInMainWorld('editor', bridge)

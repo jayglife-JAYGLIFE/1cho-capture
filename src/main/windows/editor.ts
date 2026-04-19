@@ -1,17 +1,34 @@
-import { BrowserWindow, clipboard, nativeImage } from 'electron'
+import { BrowserWindow, clipboard, nativeImage, ipcMain } from 'electron'
 import path from 'node:path'
 import { IPC } from '../../shared/constants'
 import type { CaptureResult } from '../../shared/types'
 
 /**
- * 성능 최적화 (v0.3.0): 편집기 창도 앱 시작 시 1개 미리 생성하고 숨김 상태로 유지.
- * 캡처 완료 시 show() + 이미지 전달만 하면 되므로 첫 캡처 지연이 ~1초 → ~50ms로 단축.
+ * v0.6.0 최적화:
+ * - filePath 방식으로 이미지 전달 → base64 직렬화 제거
+ * - clipboard.createFromPath 사용 (data URL보다 빠름)
+ * - 이미지 로드 완료 후 show (빈 창 깜빡임 제거)
  */
 
 let editorWindow: BrowserWindow | null = null
 let editorReady = false
 let lastCapture: CaptureResult | null = null
 let pendingInit: CaptureResult | null = null
+
+const EDITOR_READY_SIGNAL = 'editor:ready-to-show'
+
+// 한 번만 등록
+let readyHandlerRegistered = false
+function registerReadyHandler(): void {
+  if (readyHandlerRegistered) return
+  readyHandlerRegistered = true
+  ipcMain.on(EDITOR_READY_SIGNAL, () => {
+    if (editorWindow && !editorWindow.isDestroyed() && !editorWindow.isVisible()) {
+      editorWindow.show()
+      editorWindow.focus()
+    }
+  })
+}
 
 export function getLastCapture(): CaptureResult | null {
   return lastCapture
@@ -20,6 +37,7 @@ export function getLastCapture(): CaptureResult | null {
 export function prewarmEditorWindow(): void {
   if (editorWindow && !editorWindow.isDestroyed()) return
   editorReady = false
+  registerReadyHandler()
 
   editorWindow = new BrowserWindow({
     width: 1100,
@@ -37,7 +55,6 @@ export function prewarmEditorWindow(): void {
     }
   })
 
-  // 창 닫기 버튼: destroy가 아닌 hide로 처리 (재사용)
   editorWindow.on('close', (e) => {
     if (editorWindow && !editorWindow.isDestroyed()) {
       e.preventDefault()
@@ -47,7 +64,6 @@ export function prewarmEditorWindow(): void {
 
   editorWindow.webContents.once('did-finish-load', () => {
     editorReady = true
-    // 캡처가 먼저 와서 대기 중이면 바로 전달
     if (pendingInit && editorWindow && !editorWindow.isDestroyed()) {
       editorWindow.webContents.send(IPC.EDITOR_INIT, pendingInit)
       pendingInit = null
@@ -64,19 +80,22 @@ export function prewarmEditorWindow(): void {
 export async function openEditorWithImage(result: CaptureResult): Promise<void> {
   lastCapture = result
 
-  // 원본 이미지를 클립보드에 즉시 복사
+  // 클립보드 자동 복사 — filePath 우선 (data URL보다 빠름)
   try {
-    const img = nativeImage.createFromDataURL(result.dataUrl)
-    clipboard.writeImage(img)
+    let img: Electron.NativeImage | null = null
+    if (result.filePath) {
+      img = nativeImage.createFromPath(result.filePath)
+    } else if (result.dataUrl) {
+      img = nativeImage.createFromDataURL(result.dataUrl)
+    }
+    if (img && !img.isEmpty()) clipboard.writeImage(img)
   } catch {
-    // ignore
+    /* ignore */
   }
 
-  // 창이 없거나 destroy 됐으면 재생성
   if (!editorWindow || editorWindow.isDestroyed()) {
     prewarmEditorWindow()
   }
-
   if (!editorWindow) return
 
   if (editorReady) {
@@ -85,8 +104,14 @@ export async function openEditorWithImage(result: CaptureResult): Promise<void> 
     pendingInit = result
   }
 
-  if (!editorWindow.isVisible()) editorWindow.show()
-  editorWindow.focus()
+  // show는 renderer가 EDITOR_READY_SIGNAL을 보내오면 실행 (빈 창 깜빡임 방지).
+  // 하지만 안전장치: 350ms 내에 신호가 없으면 그냥 show (이미지 로드 실패 대비)
+  setTimeout(() => {
+    if (editorWindow && !editorWindow.isDestroyed() && !editorWindow.isVisible()) {
+      editorWindow.show()
+      editorWindow.focus()
+    }
+  }, 350)
 }
 
 export function closeEditor(): void {
@@ -95,7 +120,6 @@ export function closeEditor(): void {
   }
 }
 
-/** 앱 종료 시 강제 파괴 */
 export function destroyEditorWindow(): void {
   if (editorWindow && !editorWindow.isDestroyed()) {
     editorWindow.removeAllListeners('close')

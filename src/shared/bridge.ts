@@ -17,6 +17,8 @@ export interface EditorBridge {
   save: (dataUrl: string, format?: 'png' | 'jpg') => Promise<string>
   copy: (dataUrl: string) => Promise<void>
   close: () => Promise<void>
+  /** v0.6.0+: renderer가 이미지 로드 완료 후 호출 → main이 창을 show */
+  readyToShow?: () => void
 }
 
 export interface SettingsBridge {
