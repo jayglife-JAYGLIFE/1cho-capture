@@ -17,7 +17,8 @@ export const DEFAULT_SETTINGS: Omit<AppSettings, 'saveFolder'> = {
   filenamePattern: 'capture_{YYYY}{MM}{DD}_{HH}{mm}{ss}',
   toolbar: {
     showOnStartup: true
-  }
+  },
+  autoStart: true
 }
 
 export const IPC = {

@@ -72,6 +72,11 @@ export function registerIpcHandlers(): void {
       const { failed } = registerHotkeys(next.hotkeys)
       setHotkeyFailureBadge(failed)
     }
+    // v0.6.2: 자동 시작 on/off 변경 시 OS 등록 상태 반영
+    if (patch.autoStart !== undefined) {
+      const { applyAutoStart } = await import('./autostart')
+      applyAutoStart(next.autoStart)
+    }
     return next
   })
 

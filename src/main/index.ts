@@ -13,6 +13,7 @@ import {
 import { setupAutoUpdater } from './updater'
 import { cleanupTempCaptures } from './capture'
 import { prewarmPowerShell, destroyPowerShell } from './capture/win'
+import { applyAutoStart } from './autostart'
 import { promises as fs } from 'node:fs'
 
 // Single instance
@@ -67,6 +68,9 @@ app.whenReady().then(async () => {
 
   // v0.5.0: 자동 업데이트 (백그라운드 다운로드 + 다음 종료 시 적용)
   setupAutoUpdater()
+
+  // v0.6.2: 사용자 설정에 따라 OS 로그인 자동 시작 반영
+  applyAutoStart(getSettings().autoStart)
 
   app.on('activate', () => {
     // macOS 도크 숨겨져 있지만 혹시 재활성화되면 툴바 보이기

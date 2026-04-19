@@ -177,6 +177,25 @@ export function Settings(): JSX.Element {
         </div>
       </section>
 
+      {/* v0.6.2: 시작 옵션 */}
+      <section>
+        <h2 className="text-sm font-semibold text-gray-300 mb-2">시작 옵션</h2>
+        <label className="flex items-center justify-between bg-gray-800 rounded px-3 py-3 cursor-pointer">
+          <div>
+            <div className="text-sm">컴퓨터 시작 시 자동 실행</div>
+            <div className="text-xs text-gray-400 mt-0.5">
+              켜두면 Windows/Mac 로그인 후 자동으로 트레이에 상주해요
+            </div>
+          </div>
+          <input
+            type="checkbox"
+            checked={cfg.autoStart}
+            onChange={(e) => setField('autoStart', e.target.checked)}
+            className="w-5 h-5 accent-blue-500"
+          />
+        </label>
+      </section>
+
       <p className="text-xs text-gray-500 pt-2">
         변경사항은 즉시 저장됩니다. macOS에서는 화면 녹화 권한이 필요합니다.
       </p>

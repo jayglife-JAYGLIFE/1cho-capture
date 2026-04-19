@@ -17,6 +17,8 @@ export interface AppSettings {
   fileFormat: 'png' | 'jpg'
   filenamePattern: string
   toolbar: ToolbarSettings
+  /** v0.6.2: OS 시작 시 자동 실행 여부 (기본 true) */
+  autoStart: boolean
 }
 
 export interface ToolbarSettings {
