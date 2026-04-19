@@ -18,11 +18,13 @@ const HOTKEY_LABELS: Record<keyof AppSettings['hotkeys'], string> = {
 
 export function Settings(): JSX.Element {
   const [cfg, setCfg] = useState<AppSettings | null>(null)
+  const [version, setVersion] = useState<string>('')
   const [recordingKey, setRecordingKey] = useState<keyof AppSettings['hotkeys'] | null>(null)
 
   useEffect(() => {
     window.settings.get().then(setCfg)
     window.settings.onInit(setCfg)
+    window.settings.getVersion().then(setVersion).catch(() => undefined)
   }, [])
 
   useEffect(() => {
@@ -178,6 +180,12 @@ export function Settings(): JSX.Element {
       <p className="text-xs text-gray-500 pt-2">
         변경사항은 즉시 저장됩니다. macOS에서는 화면 녹화 권한이 필요합니다.
       </p>
+
+      {/* v0.6.1: 버전 표시 */}
+      <footer className="pt-4 mt-4 border-t border-gray-700 flex items-center justify-between text-xs text-gray-500">
+        <span>1초캡처</span>
+        <span className="font-mono">{version ? `v${version}` : ''}</span>
+      </footer>
     </div>
   )
 }

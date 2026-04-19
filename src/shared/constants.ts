@@ -37,6 +37,7 @@ export const IPC = {
   SETTINGS_GET: 'settings:get',
   SETTINGS_SET: 'settings:set',
   SETTINGS_PICK_FOLDER: 'settings:pickFolder',
+  SETTINGS_GET_VERSION: 'settings:getVersion',
 
   CAPTURE_REGION: 'capture:region',
   CAPTURE_FULLSCREEN: 'capture:fullscreen',

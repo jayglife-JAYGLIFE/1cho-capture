@@ -8,7 +8,8 @@ const bridge: SettingsBridge = {
   },
   get: () => ipcRenderer.invoke(IPC.SETTINGS_GET),
   set: (patch) => ipcRenderer.invoke(IPC.SETTINGS_SET, patch),
-  pickFolder: () => ipcRenderer.invoke(IPC.SETTINGS_PICK_FOLDER)
+  pickFolder: () => ipcRenderer.invoke(IPC.SETTINGS_PICK_FOLDER),
+  getVersion: () => ipcRenderer.invoke(IPC.SETTINGS_GET_VERSION)
 }
 
 contextBridge.exposeInMainWorld('settings', bridge)

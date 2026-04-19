@@ -1,4 +1,4 @@
-import { ipcMain, dialog, clipboard, nativeImage, shell, BrowserWindow } from 'electron'
+import { app, ipcMain, dialog, clipboard, nativeImage, shell, BrowserWindow } from 'electron'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { IPC } from '../shared/constants'
@@ -74,6 +74,8 @@ export function registerIpcHandlers(): void {
     }
     return next
   })
+
+  ipcMain.handle(IPC.SETTINGS_GET_VERSION, () => app.getVersion())
 
   ipcMain.handle(IPC.SETTINGS_PICK_FOLDER, async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender) ?? undefined

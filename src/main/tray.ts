@@ -23,6 +23,21 @@ export function createTray(): Tray {
 
   tray = new Tray(icon)
   tray.setToolTip(`1초캡처 v${app.getVersion()}`)
+
+  // v0.6.1: 트레이 아이콘 더블클릭(Win) / 클릭(Mac) 시 툴바 열기
+  tray.on('double-click', () => {
+    showToolbar()
+    rebuildMenu()
+  })
+  tray.on('click', () => {
+    // macOS에선 트레이 클릭 = 메뉴 오픈이 네이티브 동작이므로 click 리스너가 안 먹고,
+    // Windows에서는 싱글 클릭으로도 툴바를 띄우고 싶은 경우가 많아 여기서 show.
+    if (process.platform === 'win32') {
+      showToolbar()
+      rebuildMenu()
+    }
+  })
+
   rebuildMenu()
   return tray
 }

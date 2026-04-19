@@ -11,7 +11,8 @@ import { store } from '../store'
  * 캡처 중엔 자동으로 hide했다가 완료 후 다시 show.
  */
 
-const TOOLBAR_WIDTH = 380
+// v0.6.1: 가로폭 확대로 모든 라벨이 한 줄에 나란히 정렬되도록
+const TOOLBAR_WIDTH = 460
 const TOOLBAR_HEIGHT = 48
 
 let toolbarWindow: BrowserWindow | null = null

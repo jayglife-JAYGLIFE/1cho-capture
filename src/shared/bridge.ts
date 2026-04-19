@@ -26,6 +26,8 @@ export interface SettingsBridge {
   get: () => Promise<AppSettings>
   set: (patch: Partial<AppSettings>) => Promise<AppSettings>
   pickFolder: () => Promise<string | null>
+  /** v0.6.1+: 설정 창 하단에 버전을 표시하기 위한 앱 버전 조회 */
+  getVersion: () => Promise<string>
 }
 
 export type ToolbarCaptureMode = 'region' | 'fullscreen' | 'window' | 'scroll'

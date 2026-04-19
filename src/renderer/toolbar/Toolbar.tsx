@@ -30,6 +30,8 @@ export function Toolbar(): JSX.Element {
         color: 'white',
         display: 'flex',
         alignItems: 'center',
+        flexWrap: 'nowrap',
+        whiteSpace: 'nowrap',
         borderRadius: 12,
         boxShadow: '0 8px 24px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.06)',
         padding: '0 8px',
@@ -49,7 +51,9 @@ export function Toolbar(): JSX.Element {
           padding: '0 10px',
           color: '#9CA3AF',
           fontWeight: 600,
-          fontSize: 12
+          fontSize: 12,
+          whiteSpace: 'nowrap',
+          flexShrink: 0
         }}
       >
         <span style={{ fontSize: 14 }}>📸</span>
@@ -62,7 +66,15 @@ export function Toolbar(): JSX.Element {
       />
 
       {/* 캡처 버튼들 */}
-      <div style={{ display: 'flex', gap: 2, flex: 1, padding: '0 4px' }}>
+      <div
+        style={{
+          display: 'flex',
+          gap: 2,
+          flex: 1,
+          padding: '0 4px',
+          flexWrap: 'nowrap'
+        }}
+      >
         {BUTTONS.map((b) => (
           <CaptureBtn
             key={b.id}
@@ -116,6 +128,8 @@ function CaptureBtn(props: {
           cursor: 'pointer',
           fontSize: 12,
           fontWeight: 500,
+          whiteSpace: 'nowrap',
+          flexShrink: 0,
           transition: 'background 120ms'
         } as React.CSSProperties
       }
