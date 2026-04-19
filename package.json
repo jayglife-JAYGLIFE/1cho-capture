@@ -66,6 +66,16 @@
         "portable"
       ],
       "icon": "resources/icon.png"
+    },
+    "nsis": {
+      "artifactName": "1cho-capture-${version}-win-setup.${ext}",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "portable": {
+      "artifactName": "1cho-capture-${version}-win-portable.${ext}"
     }
   }
 }
