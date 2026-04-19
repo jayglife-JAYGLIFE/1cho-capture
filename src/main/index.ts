@@ -1,10 +1,15 @@
 import { app, BrowserWindow } from 'electron'
-import { createTray, setHotkeyFailureBadge } from './tray'
+import { createTray, rebuildMenu, setHotkeyFailureBadge } from './tray'
 import { registerHotkeys, unregisterAllHotkeys } from './hotkey'
 import { registerIpcHandlers } from './ipc'
 import { getSettings } from './store'
 import { prewarmOverlayWindows } from './windows/overlay'
 import { prewarmEditorWindow, destroyEditorWindow } from './windows/editor'
+import {
+  createToolbarWindow,
+  destroyToolbarWindow,
+  showToolbar
+} from './windows/toolbar'
 import { promises as fs } from 'node:fs'
 
 // Single instance
@@ -12,6 +17,12 @@ const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
   app.quit()
 }
+
+// 이미 앱이 실행 중인 상태에서 데스크톱 아이콘이 또 클릭되면 → 툴바 팝업
+app.on('second-instance', () => {
+  showToolbar()
+  rebuildMenu()
+})
 
 // Hide dock icon on Mac; tray-only app
 if (process.platform === 'darwin') {
@@ -34,11 +45,18 @@ app.whenReady().then(async () => {
   setHotkeyFailureBadge(failed)
 
   // v0.3.0: 창 예열 — 앱 시작 시 숨김 상태로 미리 생성해서 첫 캡처 지연 제거.
-  // 약간의 메모리 비용(~150MB)으로 수백 ms 지연을 없앰.
   prewarmOverlayWindows()
   prewarmEditorWindow()
 
+  // v0.4.0: 플로팅 툴바. 설정에서 showOnStartup=false면 숨김 상태로만 생성.
+  const showToolbarOnStartup = getSettings().toolbar?.showOnStartup ?? true
+  createToolbarWindow(showToolbarOnStartup)
+  // 툴바 보이기/숨기기 상태 반영
+  setTimeout(rebuildMenu, 100)
+
   app.on('activate', () => {
+    // macOS 도크 숨겨져 있지만 혹시 재활성화되면 툴바 보이기
+    showToolbar()
     if (BrowserWindow.getAllWindows().length === 0) {
       // no-op
     }
@@ -50,8 +68,9 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
-  // 편집기 창이 close preventDefault 걸려있으므로 종료 전에 명시 해제
+  // close preventDefault 걸려있는 창들 종료 전에 명시 해제
   destroyEditorWindow()
+  destroyToolbarWindow()
 })
 
 app.on('will-quit', () => {

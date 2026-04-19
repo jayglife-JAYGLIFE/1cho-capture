@@ -5,6 +5,7 @@ import { captureFullScreen } from './capture'
 import { openEditorWithImage } from './windows/editor'
 import { openSettingsWindow } from './windows/settings'
 import { startScrollCapture } from './capture/scroll'
+import { isToolbarVisible, showToolbar, hideToolbar } from './windows/toolbar'
 import { openSaveFolder } from './ipc'
 
 let tray: Tray | null = null
@@ -82,6 +83,14 @@ export function rebuildMenu(): void {
       click: () => startScrollCapture()
     },
     { type: 'separator' },
+    {
+      label: isToolbarVisible() ? '툴바 숨기기' : '툴바 보이기',
+      click: () => {
+        if (isToolbarVisible()) hideToolbar()
+        else showToolbar()
+        setTimeout(rebuildMenu, 50)
+      }
+    },
     { label: '저장 폴더 열기', click: () => openSaveFolder() },
     { label: '설정…', click: () => openSettingsWindow() },
     { type: 'separator' },

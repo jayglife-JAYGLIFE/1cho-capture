@@ -3,10 +3,21 @@ import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { IPC } from '../shared/constants'
 import type { AppSettings, RegionSelection } from '../shared/types'
+import type { ToolbarCaptureMode } from '../shared/bridge'
 import { getSettings, setSettings } from './store'
 import { captureFullScreen, listWindowSources, captureWindowBySourceId } from './capture'
-import { handleOverlaySelection, closeAllOverlays, openRegionOverlay } from './windows/overlay'
+import {
+  handleOverlaySelection,
+  cancelRegionOverlay,
+  openRegionOverlay
+} from './windows/overlay'
 import { openEditorWithImage, closeEditor } from './windows/editor'
+import { openSettingsWindow } from './windows/settings'
+import {
+  hideToolbar,
+  hideToolbarForCapture,
+  restoreToolbarAfterCapture
+} from './windows/toolbar'
 import {
   startScrollCapture,
   addScrollFrame,
@@ -20,7 +31,7 @@ export function registerIpcHandlers(): void {
     await handleOverlaySelection(sel)
   })
   ipcMain.handle(IPC.OVERLAY_CANCEL, () => {
-    closeAllOverlays()
+    cancelRegionOverlay()
   })
 
   // ---------- Editor ----------
@@ -90,6 +101,35 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.SCROLL_ADD_FRAME, () => addScrollFrame())
   ipcMain.handle(IPC.SCROLL_DONE, () => finishScrollCapture())
   ipcMain.handle(IPC.SCROLL_CANCEL, () => cancelScrollCapture())
+
+  // ---------- Toolbar (v0.4.0) ----------
+  ipcMain.handle(IPC.TOOLBAR_CAPTURE, async (_, mode: ToolbarCaptureMode) => {
+    // 툴바 자체가 스크린샷에 찍히지 않게 숨긴 후 캡처 실행
+    hideToolbarForCapture()
+    try {
+      if (mode === 'region' || mode === 'window') {
+        // 창 캡처는 MVP에서 영역 캡처로 폴백
+        await openRegionOverlay()
+      } else if (mode === 'fullscreen') {
+        const r = await captureFullScreen()
+        await openEditorWithImage(r)
+        restoreToolbarAfterCapture()
+      } else if (mode === 'scroll') {
+        await startScrollCapture()
+      }
+    } catch (e) {
+      console.error('[toolbar capture]', e)
+      restoreToolbarAfterCapture()
+    }
+  })
+
+  ipcMain.handle(IPC.TOOLBAR_HIDE, () => hideToolbar())
+  ipcMain.handle(IPC.TOOLBAR_SETTINGS, () => openSettingsWindow())
+  // 위치 저장은 main의 'move' 이벤트에서 이미 처리. 여기선 혹시라도 명시적 저장 요청 대응.
+  ipcMain.handle(IPC.TOOLBAR_SAVE_POSITION, (_, pos: { x: number; y: number }) => {
+    const current = getSettings()
+    setSettings({ toolbar: { ...current.toolbar, position: pos } })
+  })
 }
 
 function dataUrlToBuffer(dataUrl: string): Buffer {

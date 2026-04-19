@@ -14,7 +14,10 @@ export const DEFAULT_SETTINGS: Omit<AppSettings, 'saveFolder'> = {
   hotkeys: DEFAULT_HOTKEYS,
   afterCapture: 'editor',
   fileFormat: 'png',
-  filenamePattern: 'capture_{YYYY}{MM}{DD}_{HH}{mm}{ss}'
+  filenamePattern: 'capture_{YYYY}{MM}{DD}_{HH}{mm}{ss}',
+  toolbar: {
+    showOnStartup: true
+  }
 }
 
 export const IPC = {
@@ -43,5 +46,11 @@ export const IPC = {
 
   SCROLL_ADD_FRAME: 'scroll:addFrame',
   SCROLL_DONE: 'scroll:done',
-  SCROLL_CANCEL: 'scroll:cancel'
+  SCROLL_CANCEL: 'scroll:cancel',
+
+  // Toolbar (v0.4.0)
+  TOOLBAR_CAPTURE: 'toolbar:capture',
+  TOOLBAR_HIDE: 'toolbar:hide',
+  TOOLBAR_SETTINGS: 'toolbar:settings',
+  TOOLBAR_SAVE_POSITION: 'toolbar:savePosition'
 } as const

@@ -16,6 +16,14 @@ export interface AppSettings {
   afterCapture: AfterCaptureAction
   fileFormat: 'png' | 'jpg'
   filenamePattern: string
+  toolbar: ToolbarSettings
+}
+
+export interface ToolbarSettings {
+  /** 앱 시작 시 툴바를 자동으로 표시할지 */
+  showOnStartup: boolean
+  /** 마지막 툴바 위치 (없으면 화면 상단 중앙) */
+  position?: { x: number; y: number }
 }
 
 export interface DisplayInfo {

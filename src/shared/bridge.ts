@@ -25,3 +25,12 @@ export interface SettingsBridge {
   set: (patch: Partial<AppSettings>) => Promise<AppSettings>
   pickFolder: () => Promise<string | null>
 }
+
+export type ToolbarCaptureMode = 'region' | 'fullscreen' | 'window' | 'scroll'
+
+export interface ToolbarBridge {
+  capture: (mode: ToolbarCaptureMode) => Promise<void>
+  hide: () => Promise<void>
+  settings: () => Promise<void>
+  savePosition: (pos: { x: number; y: number }) => Promise<void>
+}

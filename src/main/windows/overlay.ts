@@ -4,6 +4,7 @@ import { captureRegion } from '../capture'
 import { IPC } from '../../shared/constants'
 import type { RegionSelection } from '../../shared/types'
 import { openEditorWithImage } from './editor'
+import { hideToolbarForCapture, restoreToolbarAfterCapture } from './toolbar'
 
 /**
  * v0.3.1 UX 개편: 맥 Cmd+Shift+4 처럼 "라이브 화면" 위에 투명 오버레이만 띄우고,
@@ -111,6 +112,9 @@ export async function openRegionOverlay(): Promise<void> {
   if (isOpen) return
   isOpen = true
 
+  // 오버레이 + 플로팅 툴바 모두 스크린샷에 찍히면 안 됨
+  hideToolbarForCapture()
+
   try {
     if (entries.length === 0) {
       for (const d of screen.getAllDisplays()) {
@@ -118,7 +122,6 @@ export async function openRegionOverlay(): Promise<void> {
       }
     }
 
-    // 배경 사전 캡처 없음 — 바로 표시
     for (const entry of entries) {
       await waitForReady(entry)
       if (entry.window.isDestroyed()) continue
@@ -135,6 +138,7 @@ export async function openRegionOverlay(): Promise<void> {
   } catch (e) {
     console.error('[overlay] openRegionOverlay', e)
     isOpen = false
+    restoreToolbarAfterCapture()
   }
 }
 
@@ -147,6 +151,12 @@ export function closeAllOverlays(): void {
   isOpen = false
 }
 
+/** 사용자가 ESC 등으로 선택을 취소한 경우: 툴바 복원 */
+export function cancelRegionOverlay(): void {
+  closeAllOverlays()
+  restoreToolbarAfterCapture()
+}
+
 /**
  * 드래그 완료 → 오버레이 숨긴 후 해당 영역만 네이티브 캡처.
  * 오버레이 자체가 스크린샷에 찍히지 않도록 hide 후 짧게 대기 (OS 렌더링 반영).
@@ -155,7 +165,10 @@ export async function handleOverlaySelection(selection: RegionSelection): Promis
   closeAllOverlays()
 
   const display = screen.getAllDisplays().find((d) => d.id === selection.displayId)
-  if (!display) return
+  if (!display) {
+    restoreToolbarAfterCapture()
+    return
+  }
 
   // 오버레이가 실제 화면에서 사라지기까지 OS 렌더링 반영 대기.
   // macOS는 보통 16~32ms면 충분, Windows는 DWM 합성 때문에 50~80ms 권장.
@@ -169,5 +182,7 @@ export async function handleOverlaySelection(selection: RegionSelection): Promis
     await openEditorWithImage(result)
   } catch (e) {
     console.error('[overlay] captureRegion', e)
+  } finally {
+    restoreToolbarAfterCapture()
   }
 }
