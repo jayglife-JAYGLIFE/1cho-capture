@@ -10,6 +10,7 @@ import {
   destroyToolbarWindow,
   showToolbar
 } from './windows/toolbar'
+import { setupAutoUpdater } from './updater'
 import { promises as fs } from 'node:fs'
 
 // Single instance
@@ -53,6 +54,9 @@ app.whenReady().then(async () => {
   createToolbarWindow(showToolbarOnStartup)
   // 툴바 보이기/숨기기 상태 반영
   setTimeout(rebuildMenu, 100)
+
+  // v0.5.0: 자동 업데이트 (백그라운드 다운로드 + 다음 종료 시 적용)
+  setupAutoUpdater()
 
   app.on('activate', () => {
     // macOS 도크 숨겨져 있지만 혹시 재활성화되면 툴바 보이기

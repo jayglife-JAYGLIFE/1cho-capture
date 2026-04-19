@@ -1,6 +1,6 @@
 {
   "name": "one-second-capture",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "1초캡처 - 빠르고 간단한 크로스플랫폼 스크린 캡처 도구",
   "main": "out/main/index.js",
   "author": "jungi",
@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "electron-store": "^8.2.0",
+    "electron-updater": "^6.8.3",
     "konva": "^9.3.16",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -45,12 +46,22 @@
       "out/**/*",
       "resources/**/*"
     ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "jayglife-JAYGLIFE",
+        "repo": "1cho-capture"
+      }
+    ],
     "mac": {
       "category": "public.app-category.graphics-design",
       "target": [
         {
           "target": "dmg",
-          "arch": ["arm64", "x64"]
+          "arch": [
+            "arm64",
+            "x64"
+          ]
         }
       ],
       "icon": "resources/icon.png",

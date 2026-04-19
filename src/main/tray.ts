@@ -6,6 +6,7 @@ import { openEditorWithImage } from './windows/editor'
 import { openSettingsWindow } from './windows/settings'
 import { startScrollCapture } from './capture/scroll'
 import { isToolbarVisible, showToolbar, hideToolbar } from './windows/toolbar'
+import { checkForUpdatesManually, quitAndInstallIfReady, getLastDownloadedVersion } from './updater'
 import { openSaveFolder } from './ipc'
 
 let tray: Tray | null = null
@@ -93,6 +94,24 @@ export function rebuildMenu(): void {
     },
     { label: '저장 폴더 열기', click: () => openSaveFolder() },
     { label: '설정…', click: () => openSettingsWindow() },
+    { type: 'separator' }
+  )
+
+  // 자동 업데이트 관련 (v0.5.0)
+  const readyVer = getLastDownloadedVersion()
+  if (readyVer) {
+    items.push({
+      label: `🎉 v${readyVer} 설치하고 재시작`,
+      click: () => quitAndInstallIfReady()
+    })
+  } else {
+    items.push({
+      label: '업데이트 확인…',
+      click: () => checkForUpdatesManually()
+    })
+  }
+
+  items.push(
     { type: 'separator' },
     { label: '종료', role: 'quit', click: () => app.quit() }
   )

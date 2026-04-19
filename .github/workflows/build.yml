@@ -22,6 +22,8 @@ jobs:
           name: mac-installers
           path: |
             release/**/*.dmg
+            release/**/*.dmg.blockmap
+            release/**/latest-mac.yml
           retention-days: 30
 
   build-win:
@@ -37,10 +39,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: win-installers
-          # 최상위 release 폴더의 인스톨러만 포함 (win-unpacked/ 등 내부 빌드 중간산물 제외)
+          # 최상위 release 폴더의 인스톨러 + 자동 업데이터 메타파일
           path: |
             release/*/1cho-capture-*-win-setup.exe
             release/*/1cho-capture-*-win-portable.exe
+            release/*/1cho-capture-*-win-setup.exe.blockmap
+            release/*/latest.yml
           retention-days: 30
 
   release:
@@ -55,11 +59,23 @@ jobs:
           merge-multiple: true
           path: artifacts
       - name: Flatten artifact paths
-        # artifacts/mac-installers/0.x.x/*.dmg 같은 중첩 경로를 artifacts/ 최상위로 평탄화
+        # 중첩된 폴더 경로를 최상위로 평탄화 + 업데이터 메타파일 포함
         run: |
-          find artifacts -type f \( -name '*.dmg' -o -name '*.exe' \) -print
+          find artifacts -type f \( \
+            -name '*.dmg' -o \
+            -name '*.exe' -o \
+            -name '*.blockmap' -o \
+            -name 'latest.yml' -o \
+            -name 'latest-mac.yml' \
+          \) -print
           mkdir -p flat
-          find artifacts -type f \( -name '*.dmg' -o -name '*.exe' \) -exec cp {} flat/ \;
+          find artifacts -type f \( \
+            -name '*.dmg' -o \
+            -name '*.exe' -o \
+            -name '*.blockmap' -o \
+            -name 'latest.yml' -o \
+            -name 'latest-mac.yml' \
+          \) -exec cp {} flat/ \;
           ls -la flat/
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
