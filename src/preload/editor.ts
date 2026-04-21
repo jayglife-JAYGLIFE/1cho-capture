@@ -9,7 +9,8 @@ const bridge: EditorBridge = {
   save: (dataUrl, format) => ipcRenderer.invoke(IPC.EDITOR_SAVE, { dataUrl, format }),
   copy: (dataUrl) => ipcRenderer.invoke(IPC.EDITOR_COPY, dataUrl),
   close: () => ipcRenderer.invoke(IPC.EDITOR_CLOSE),
-  readyToShow: () => ipcRenderer.send('editor:ready-to-show')
+  readyToShow: () => ipcRenderer.send('editor:ready-to-show'),
+  loadImageBuffer: (filePath) => ipcRenderer.invoke(IPC.EDITOR_LOAD_IMAGE, filePath)
 }
 
 contextBridge.exposeInMainWorld('editor', bridge)

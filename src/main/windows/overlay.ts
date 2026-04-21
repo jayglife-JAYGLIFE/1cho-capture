@@ -178,10 +178,25 @@ export async function handleOverlaySelection(selection: RegionSelection): Promis
   const absY = display.bounds.y + selection.y
 
   try {
+    console.log('[overlay] capturing region:', { absX, absY, w: selection.width, h: selection.height })
     const result = await captureRegion(absX, absY, selection.width, selection.height)
+    console.log('[overlay] captured →', result.filePath ?? '(no filePath)')
     await openEditorWithImage(result)
   } catch (e) {
-    console.error('[overlay] captureRegion', e)
+    const msg = (e as Error)?.message ?? String(e)
+    console.error('[overlay] captureRegion 실패:', msg)
+    try {
+      const { Notification } = await import('electron')
+      new Notification({
+        title: '1초캡처 — 캡처 실패',
+        body:
+          process.platform === 'darwin'
+            ? '화면 녹화 권한이 허용됐는지 확인해주세요.\n시스템 설정 → 개인정보 보호 및 보안 → 화면 녹화.'
+            : '캡처에 실패했습니다. ' + msg
+      }).show()
+    } catch {
+      /* ignore */
+    }
   } finally {
     restoreToolbarAfterCapture()
   }

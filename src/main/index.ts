@@ -60,9 +60,18 @@ app.whenReady().then(async () => {
   prewarmOverlayWindows()
   prewarmEditorWindow()
 
-  // v0.4.0: 플로팅 툴바. 설정에서 showOnStartup=false면 숨김 상태로만 생성.
+  // v0.4.0/0.6.3: 플로팅 툴바.
+  // - 사용자가 직접 실행하면 툴바를 띄움 (처음 UI 탐색에 도움)
+  // - OS 로그인 시 자동 실행된 경우엔 트레이에만 조용히 상주 (창 X)
+  //   → setLoginItemSettings에서 설정한 '--autostart' 플래그(Win) 또는
+  //     wasOpenedAtLogin 플래그(macOS) 로 판별
+  const wasAutoStarted =
+    process.argv.includes('--autostart') ||
+    (process.platform === 'darwin' && app.getLoginItemSettings().wasOpenedAtLogin)
+
   const showToolbarOnStartup = getSettings().toolbar?.showOnStartup ?? true
-  createToolbarWindow(showToolbarOnStartup)
+  const shouldShowToolbar = showToolbarOnStartup && !wasAutoStarted
+  createToolbarWindow(shouldShowToolbar)
   // 툴바 보이기/숨기기 상태 반영
   setTimeout(rebuildMenu, 100)
 

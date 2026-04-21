@@ -58,6 +58,16 @@ export function registerIpcHandlers(): void {
     closeEditor()
   })
 
+  // v0.6.3: renderer에서 CSP/same-origin 회피용으로 이미지 버퍼를 IPC로 읽어감
+  ipcMain.handle(IPC.EDITOR_LOAD_IMAGE, async (_, filePath: string) => {
+    try {
+      return await fs.readFile(filePath)
+    } catch (e) {
+      console.error('[ipc] EDITOR_LOAD_IMAGE 실패:', filePath, e)
+      return new Uint8Array()
+    }
+  })
+
   // ---------- Settings ----------
   ipcMain.handle(IPC.SETTINGS_GET, () => getSettings())
 

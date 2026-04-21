@@ -34,6 +34,7 @@ export const IPC = {
   EDITOR_SAVE: 'editor:save',
   EDITOR_COPY: 'editor:copy',
   EDITOR_CLOSE: 'editor:close',
+  EDITOR_LOAD_IMAGE: 'editor:load-image',
 
   SETTINGS_GET: 'settings:get',
   SETTINGS_SET: 'settings:set',

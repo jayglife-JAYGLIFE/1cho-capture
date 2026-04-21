@@ -26,32 +26,73 @@ export function Editor(): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
   const [stageSize, setStageSize] = useState({ width: 800, height: 600 })
 
-  // Receive capture from main process
+  // Receive capture from main process (v0.6.3: Blob URL 방식으로 전환)
   useEffect(() => {
-    window.editor.onInit((data) => {
-      const image = new Image()
-      image.onload = () => {
-        setImg(image)
-        setMosaicImg(null) // v0.6.0: 모자이크는 lazy 계산 (실제 툴 선택 시에만)
-        setShapes([])
-        setRedoStack([])
-        // main process에게 "이미지 로드 완료 — 창 show 해도 됨" 신호
+    const lastBlobUrlRef = { current: null as string | null }
+
+    window.editor.onInit(async (data) => {
+      let src = ''
+      let revokeAfterLoad: string | null = null
+
+      // v0.6.3: file:// URL은 Chromium에서 CSP/cross-origin으로 차단되는 경우가 있어
+      // IPC로 버퍼를 받아 Blob URL 로 변환 (이미 CSP img-src에 blob: 허용됨)
+      if (data.filePath && window.editor.loadImageBuffer) {
+        try {
+          const buf = await window.editor.loadImageBuffer(data.filePath)
+          if (buf && buf.byteLength > 0) {
+            // IPC로 온 Uint8Array를 렌더러에서 Blob으로 래핑.
+            // TS의 Uint8Array<ArrayBufferLike> vs Blob의 ArrayBufferView<ArrayBuffer>
+            // 타입 충돌을 피하려고 BlobPart로 캐스팅 (런타임 안전).
+            const blob = new Blob([buf as unknown as BlobPart], { type: 'image/png' })
+            src = URL.createObjectURL(blob)
+            revokeAfterLoad = src
+          }
+        } catch (e) {
+          console.error('[editor] loadImageBuffer 실패:', e)
+        }
+      }
+      if (!src && data.dataUrl) {
+        src = data.dataUrl
+      }
+
+      // 이전에 만든 Blob URL은 메모리 해제
+      if (lastBlobUrlRef.current) {
+        URL.revokeObjectURL(lastBlobUrlRef.current)
+        lastBlobUrlRef.current = null
+      }
+
+      if (!src) {
+        // 이미지가 없어도 창은 띄워야 사용자에게 피드백
         try {
           window.editor.readyToShow?.()
         } catch {
-          /* older preload */
+          /* ignore */
         }
+        return
       }
-      image.onerror = () => {
-        // 혹시 실패해도 창은 띄워야 함
+
+      const image = new Image()
+      image.onload = () => {
+        setImg(image)
+        setMosaicImg(null) // v0.6.0: 모자이크는 lazy 계산
+        setShapes([])
+        setRedoStack([])
+        lastBlobUrlRef.current = revokeAfterLoad
         try {
           window.editor.readyToShow?.()
         } catch {
           /* ignore */
         }
       }
-      // v0.6.0: filePath 우선 (file:// URL), 없으면 dataUrl 폴백
-      const src = data.filePath ? `file://${data.filePath.replace(/\\/g, '/')}` : (data.dataUrl ?? '')
+      image.onerror = (err) => {
+        console.error('[editor] image.onerror:', err)
+        if (revokeAfterLoad) URL.revokeObjectURL(revokeAfterLoad)
+        try {
+          window.editor.readyToShow?.()
+        } catch {
+          /* ignore */
+        }
+      }
       image.src = src
     })
   }, [])

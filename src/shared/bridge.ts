@@ -19,6 +19,11 @@ export interface EditorBridge {
   close: () => Promise<void>
   /** v0.6.0+: renderer가 이미지 로드 완료 후 호출 → main이 창을 show */
   readyToShow?: () => void
+  /**
+   * v0.6.3: 캡처 임시 파일을 Buffer로 읽어 Blob URL 생성용.
+   * file:// URL은 CSP/same-origin 이슈가 있어 IPC Buffer → Blob 변환으로 교체.
+   */
+  loadImageBuffer?: (filePath: string) => Promise<Uint8Array>
 }
 
 export interface SettingsBridge {
