@@ -24,7 +24,12 @@ export function Editor(): JSX.Element {
   const [editingTextId, setEditingTextId] = useState<string | null>(null)
   const stageRef = useRef<Konva.Stage>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  const [stageSize, setStageSize] = useState({ width: 800, height: 600 })
+  const [containerSize, setContainerSize] = useState({ width: 800, height: 600 })
+  // v0.7.1: 사용자 조작 가능 zoom/pan. null이면 이미지 로드 시 자동 fit.
+  const [zoom, setZoom] = useState<number | null>(null)
+  const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
+  const [isPanning, setIsPanning] = useState(false)
+  const panStartRef = useRef<{ mouseX: number; mouseY: number; panX: number; panY: number } | null>(null)
 
   // Receive capture from main process (v0.6.3: Blob URL 방식으로 전환)
   useEffect(() => {
@@ -77,6 +82,7 @@ export function Editor(): JSX.Element {
         setMosaicImg(null) // v0.6.0: 모자이크는 lazy 계산
         setShapes([])
         setRedoStack([])
+        setZoom(null) // v0.7.1: 새 이미지는 자동 fit
         lastBlobUrlRef.current = revokeAfterLoad
         try {
           window.editor.readyToShow?.()
@@ -107,43 +113,112 @@ export function Editor(): JSX.Element {
     return () => clearTimeout(timer)
   }, [tool, img, mosaicImg])
 
-  // Compute stage size to fit the window and image
+  // v0.7.1: 컨테이너 크기만 측정 (Stage viewport = container 전체)
   useEffect(() => {
     const update = (): void => {
-      if (!containerRef.current || !img) return
+      if (!containerRef.current) return
       const { clientWidth, clientHeight } = containerRef.current
-      const pad = 40
-      const maxW = clientWidth - pad
-      const maxH = clientHeight - pad
-      const ratio = img.width / img.height
-      let w = Math.min(img.width, maxW)
-      let h = w / ratio
-      if (h > maxH) {
-        h = maxH
-        w = h * ratio
-      }
-      setStageSize({ width: w, height: h })
+      setContainerSize({ width: clientWidth, height: clientHeight })
     }
     update()
     window.addEventListener('resize', update)
     return () => window.removeEventListener('resize', update)
-  }, [img])
+  }, [])
 
-  // scaling: shapes are stored in IMAGE coordinates; stage is scaled via `scale` prop
-  const scale = img ? stageSize.width / img.width : 1
+  // 자동 fit 계산
+  const computeFitZoom = useCallback((): number => {
+    if (!img) return 1
+    const pad = 40
+    const maxW = Math.max(100, containerSize.width - pad)
+    const maxH = Math.max(100, containerSize.height - pad)
+    return Math.min(maxW / img.width, maxH / img.height, 1)
+  }, [img, containerSize])
+
+  const applyFit = useCallback((): void => {
+    if (!img) return
+    const fit = computeFitZoom()
+    setZoom(fit)
+    setPan({
+      x: (containerSize.width - img.width * fit) / 2,
+      y: (containerSize.height - img.height * fit) / 2
+    })
+  }, [img, containerSize, computeFitZoom])
+
+  const applyActualSize = useCallback((): void => {
+    if (!img) return
+    setZoom(1)
+    setPan({
+      x: (containerSize.width - img.width) / 2,
+      y: (containerSize.height - img.height) / 2
+    })
+  }, [img, containerSize])
+
+  // 이미지 or 컨테이너 첫 로드 시 fit 자동 적용 (zoom이 null일 때만)
+  useEffect(() => {
+    if (zoom === null && img && containerSize.width > 0) {
+      applyFit()
+    }
+  }, [img, containerSize, zoom, applyFit])
+
+  // v0.7.1: 휠 이벤트 — 일반: 세로 스크롤, Shift+: 가로 스크롤, Ctrl/Cmd+: 줌
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const onWheel = (ev: WheelEvent): void => {
+      if (!img || zoom === null) return
+      ev.preventDefault()
+      if (ev.ctrlKey || ev.metaKey) {
+        // 커서 위치 기준 줌
+        const rect = el.getBoundingClientRect()
+        const pointer = { x: ev.clientX - rect.left, y: ev.clientY - rect.top }
+        const mousePt = {
+          x: (pointer.x - pan.x) / zoom,
+          y: (pointer.y - pan.y) / zoom
+        }
+        const factor = ev.deltaY > 0 ? 0.9 : 1.1
+        const newZoom = Math.max(0.05, Math.min(10, zoom * factor))
+        setZoom(newZoom)
+        setPan({
+          x: pointer.x - mousePt.x * newZoom,
+          y: pointer.y - mousePt.y * newZoom
+        })
+      } else {
+        // 일반 스크롤: 패닝으로 구현
+        const dx = ev.shiftKey ? -ev.deltaY : -ev.deltaX
+        const dy = ev.shiftKey ? 0 : -ev.deltaY
+        setPan((prev) => ({ x: prev.x + dx, y: prev.y + dy }))
+      }
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [img, zoom, pan.x, pan.y])
+
+  // 실효 zoom (스테이지 transform)
+  const scale = zoom ?? 1
 
   // --- Drawing handlers ---
+  // v0.7.1: pan 오프셋 고려한 이미지 좌표 계산
   const getPointer = useCallback((): { x: number; y: number } | null => {
     const stage = stageRef.current
     if (!stage) return null
     const p = stage.getPointerPosition()
     if (!p) return null
-    return { x: p.x / scale, y: p.y / scale }
-  }, [scale])
+    return { x: (p.x - pan.x) / scale, y: (p.y - pan.y) / scale }
+  }, [scale, pan.x, pan.y])
 
-  const onMouseDown = (): void => {
+  const onMouseDown = (e: Konva.KonvaEventObject<MouseEvent>): void => {
     if (!img) return
-    if (tool === 'select') return
+    // v0.7.1: 선택 도구 = 팬 모드. 드래그로 이미지 이동.
+    if (tool === 'select') {
+      setIsPanning(true)
+      panStartRef.current = {
+        mouseX: e.evt.clientX,
+        mouseY: e.evt.clientY,
+        panX: pan.x,
+        panY: pan.y
+      }
+      return
+    }
     const pos = getPointer()
     if (!pos) return
     const id = crypto.randomUUID()
@@ -201,7 +276,17 @@ export function Editor(): JSX.Element {
     }
   }
 
-  const onMouseMove = (): void => {
+  const onMouseMove = (e: Konva.KonvaEventObject<MouseEvent>): void => {
+    // v0.7.1: 팬 모드 처리
+    if (isPanning && panStartRef.current) {
+      const dx = e.evt.clientX - panStartRef.current.mouseX
+      const dy = e.evt.clientY - panStartRef.current.mouseY
+      setPan({
+        x: panStartRef.current.panX + dx,
+        y: panStartRef.current.panY + dy
+      })
+      return
+    }
     if (!drafting) return
     const pos = getPointer()
     if (!pos) return
@@ -221,6 +306,12 @@ export function Editor(): JSX.Element {
   }
 
   const onMouseUp = (): void => {
+    // v0.7.1: 팬 종료
+    if (isPanning) {
+      setIsPanning(false)
+      panStartRef.current = null
+      return
+    }
     if (!drafting) return
     // normalise rect/mosaic with negative width/height
     let finalShape: Shape = drafting
@@ -266,12 +357,16 @@ export function Editor(): JSX.Element {
 
   const exportImage = useCallback((): string | null => {
     if (!stageRef.current || !img) return null
-    // Render at original image resolution
+    // v0.7.1: pan/zoom과 무관하게 원본 이미지 영역만 원본 해상도로 export
     return stageRef.current.toDataURL({
+      x: pan.x,
+      y: pan.y,
+      width: img.width * scale,
+      height: img.height * scale,
       pixelRatio: 1 / scale,
       mimeType: 'image/png'
     })
-  }, [scale, img])
+  }, [scale, img, pan.x, pan.y])
 
   const [toast, setToast] = useState<string | null>(null)
   const showToast = useCallback((msg: string): void => {
@@ -360,19 +455,34 @@ export function Editor(): JSX.Element {
         onClose={onClose}
         canUndo={shapes.length > 0}
         canRedo={redoStack.length > 0}
+        zoomPercent={Math.round(scale * 100)}
+        onFit={applyFit}
+        onActualSize={applyActualSize}
       />
-      <div ref={containerRef} className="flex-1 flex items-center justify-center overflow-hidden relative">
+      <div ref={containerRef} className="flex-1 overflow-hidden relative" style={{ background: '#0b1220' }}>
         {img ? (
           <Stage
             ref={stageRef}
-            width={stageSize.width}
-            height={stageSize.height}
+            width={containerSize.width}
+            height={containerSize.height}
             scaleX={scale}
             scaleY={scale}
+            x={pan.x}
+            y={pan.y}
             onMouseDown={onMouseDown}
             onMouseMove={onMouseMove}
             onMouseUp={onMouseUp}
-            style={{ background: '#0b1220', cursor: tool === 'select' ? 'default' : 'crosshair' }}
+            style={{
+              background: '#0b1220',
+              cursor:
+                tool === 'select'
+                  ? isPanning
+                    ? 'grabbing'
+                    : 'grab'
+                  : tool === 'text'
+                    ? 'text'
+                    : 'crosshair'
+            }}
           >
             <Layer listening={false}>
               <KImage image={img} />

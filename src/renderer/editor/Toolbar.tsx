@@ -14,10 +14,14 @@ interface ToolbarProps {
   onClose: () => void
   canUndo: boolean
   canRedo: boolean
+  /** v0.7.1: 줌/패닝 */
+  zoomPercent?: number
+  onFit?: () => void
+  onActualSize?: () => void
 }
 
 const TOOLS: Array<{ id: Tool; label: string; icon: string }> = [
-  { id: 'select', label: '선택', icon: '↖' },
+  { id: 'select', label: '이동/팬', icon: '✋' },
   { id: 'pen', label: '펜', icon: '✎' },
   { id: 'line', label: '직선', icon: '／' },
   { id: 'arrow', label: '화살표', icon: '➜' },
@@ -79,6 +83,33 @@ export function Toolbar(props: ToolbarProps): JSX.Element {
       </label>
 
       <div className="flex-1" />
+
+      {/* v0.7.1 줌 UI */}
+      {props.zoomPercent !== undefined && (
+        <>
+          <button
+            onClick={props.onFit}
+            title="화면에 맞춤"
+            className="px-2 h-8 rounded bg-gray-700 hover:bg-gray-600 text-xs"
+          >
+            맞춤
+          </button>
+          <button
+            onClick={props.onActualSize}
+            title="실제 크기 (100%)"
+            className="px-2 h-8 rounded bg-gray-700 hover:bg-gray-600 text-xs"
+          >
+            100%
+          </button>
+          <span
+            title="현재 줌 (Ctrl/⌘+휠로 조절)"
+            className="px-2 min-w-[52px] text-center text-xs text-gray-300 font-mono"
+          >
+            {props.zoomPercent}%
+          </span>
+          <div className="w-px h-8 bg-gray-700 mx-2" />
+        </>
+      )}
 
       <button
         onClick={props.onUndo}
