@@ -41,11 +41,28 @@ export function registerIpcHandlers(): void {
       const settings = getSettings()
       const format = payload.format ?? settings.fileFormat
       const filename = buildFilename(settings, format)
-      await fs.mkdir(settings.saveFolder, { recursive: true })
-      const full = path.join(settings.saveFolder, filename)
-      const buf = dataUrlToBuffer(payload.dataUrl)
-      await fs.writeFile(full, buf)
-      return full
+      try {
+        await fs.mkdir(settings.saveFolder, { recursive: true })
+        const full = path.join(settings.saveFolder, filename)
+        const buf = dataUrlToBuffer(payload.dataUrl)
+        await fs.writeFile(full, buf)
+        console.log('[editor] 저장 성공:', full)
+        return full
+      } catch (e) {
+        const msg = (e as Error)?.message ?? String(e)
+        console.error('[editor] 저장 실패:', msg, 'folder:', settings.saveFolder)
+        // 저장 실패 시 사용자 알림
+        try {
+          const { Notification } = await import('electron')
+          new Notification({
+            title: '1초캡처 — 저장 실패',
+            body: `파일을 저장할 수 없어요.\n저장 경로: ${settings.saveFolder}\n오류: ${msg}`
+          }).show()
+        } catch {
+          /* ignore */
+        }
+        throw e
+      }
     }
   )
 

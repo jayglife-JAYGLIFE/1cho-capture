@@ -36,15 +36,15 @@ function getOrCreatePs(): PsSession {
   )
   const session: PsSession = { proc, stdoutBuf: '', waiters: [] }
 
+  // v0.6.4: Node → PS stdin 인코딩을 UTF-8로 고정
+  proc.stdin.setDefaultEncoding('utf8')
   proc.stdout.setEncoding('utf8')
   proc.stdout.on('data', (chunk: string) => {
     session.stdoutBuf += chunk
-    // 등록된 마커들을 순서대로 매칭
     while (session.waiters.length > 0) {
       const w = session.waiters[0]
       const idx = session.stdoutBuf.indexOf(w.marker)
       if (idx < 0) break
-      // 해당 마커까지 포함하는 부분을 버퍼에서 제거
       session.stdoutBuf = session.stdoutBuf.slice(idx + w.marker.length)
       session.waiters.shift()
       w.resolve()
@@ -55,14 +55,18 @@ function getOrCreatePs(): PsSession {
     console.warn('[ps-stderr]', chunk.trim())
   })
   proc.on('exit', () => {
-    // 대기 중이던 waiter들 실패 처리 & 세션 초기화
     for (const w of session.waiters) w.reject(new Error('PowerShell 세션 종료'))
     if (ps === session) ps = null
   })
 
-  // 준비 단계: Assembly 미리 로드해둬서 첫 캡처도 빠르게
+  // v0.6.4: PS 콘솔 인코딩을 UTF-8로 맞춰서 한글 사용자명 경로에서 발생하던
+  // ENOENT 문제를 해결. 그리고 Assembly 미리 로드로 첫 캡처도 빠르게.
   proc.stdin.write(
-    `Add-Type -AssemblyName System.Drawing\nAdd-Type -AssemblyName System.Windows.Forms\n`
+    `[Console]::InputEncoding = [System.Text.Encoding]::UTF8\n` +
+      `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8\n` +
+      `$OutputEncoding = [System.Text.Encoding]::UTF8\n` +
+      `Add-Type -AssemblyName System.Drawing\n` +
+      `Add-Type -AssemblyName System.Windows.Forms\n`
   )
 
   ps = session
@@ -104,11 +108,21 @@ function runPsScript(script: string, timeoutMs = 8000): Promise<void> {
 }
 
 /**
+ * v0.6.4: 경로를 base64로 전달해서 stdin 인코딩 이슈(한글 사용자명 등) 회피.
+ * PowerShell 안에서 [Convert]::FromBase64String + UTF8 디코딩으로 복원해 사용.
+ */
+function encodePathForPs(p: string): string {
+  return Buffer.from(p, 'utf8').toString('base64')
+}
+
+/**
  * Capture full virtual screen on Windows.
  */
 export async function captureFullScreenWin(): Promise<Buffer> {
   const p = tmpPng()
+  const pathB64 = encodePathForPs(p)
   const script = `
+$path = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${pathB64}'))
 $screens = [System.Windows.Forms.Screen]::AllScreens
 $top = ($screens | Measure-Object -Property {$_.Bounds.Top} -Minimum).Minimum
 $left = ($screens | Measure-Object -Property {$_.Bounds.Left} -Minimum).Minimum
@@ -119,8 +133,9 @@ $h = $bottom - $top
 $bmp = New-Object System.Drawing.Bitmap $w, $h
 $gfx = [System.Drawing.Graphics]::FromImage($bmp)
 $gfx.CopyFromScreen($left, $top, 0, 0, $bmp.Size)
-$bmp.Save('${p.replace(/\\/g, '\\\\')}', [System.Drawing.Imaging.ImageFormat]::Png)
-$gfx.Dispose(); $bmp.Dispose()
+$bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
+$gfx.Dispose()
+$bmp.Dispose()
 `.trim()
   await runPsScript(script)
   const buf = await fs.readFile(p)
@@ -138,12 +153,15 @@ export async function captureRegionWin(
   h: number
 ): Promise<Buffer> {
   const p = tmpPng()
+  const pathB64 = encodePathForPs(p)
   const script = `
+$path = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${pathB64}'))
 $bmp = New-Object System.Drawing.Bitmap ${Math.round(w)}, ${Math.round(h)}
 $gfx = [System.Drawing.Graphics]::FromImage($bmp)
 $gfx.CopyFromScreen(${Math.round(x)}, ${Math.round(y)}, 0, 0, $bmp.Size)
-$bmp.Save('${p.replace(/\\/g, '\\\\')}', [System.Drawing.Imaging.ImageFormat]::Png)
-$gfx.Dispose(); $bmp.Dispose()
+$bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
+$gfx.Dispose()
+$bmp.Dispose()
 `.trim()
   await runPsScript(script)
   const buf = await fs.readFile(p)

@@ -1,4 +1,4 @@
-import { app, Notification } from 'electron'
+import { app, Notification, dialog } from 'electron'
 import pkg from 'electron-updater'
 
 const { autoUpdater } = pkg
@@ -61,14 +61,15 @@ export function setupAutoUpdater(): void {
     autoUpdater.on('update-downloaded', async (info: { version?: string }) => {
       lastDownloadedVersion = info.version ?? null
       console.log('[updater] 다운로드 완료 → 다음 종료 시 적용:', info.version)
-      notifyUserUpdateReady(info.version ?? '')
-      // 트레이 메뉴에 "v0.x.y 설치하고 재시작" 항목이 뜨도록 갱신
+      // 트레이 메뉴에 "v0.x.y 설치하고 재시작" 항목이 뜨도록 먼저 갱신
       try {
         const tray = await import('./tray')
         tray.rebuildMenu()
       } catch {
         /* ignore */
       }
+      // v0.6.4: 알림 대신 '재시작 체크박스 + 마침' 다이얼로그 표시
+      await promptInstallUpdate(info.version ?? '')
     })
 
     autoUpdater.on('error', (err: Error) => {
@@ -109,6 +110,45 @@ function notifyUserUpdateReady(version: string): void {
     }
   } catch (e) {
     console.warn('[updater] 알림 표시 실패:', e)
+  }
+}
+
+/**
+ * v0.6.4: 업데이트 다운로드 완료 시 설치 마법사의 '마침' 화면처럼
+ * 체크박스 + 마침 버튼 조합의 다이얼로그를 띄워 즉시 재시작을 유도.
+ *
+ * - "마침" 버튼 + "지금 재시작" 체크박스(기본 ON) → autoUpdater.quitAndInstall
+ * - "나중에" 또는 체크박스 해제 후 마침 → 다이얼로그만 닫음 (다음 종료 시 자동 적용)
+ */
+async function promptInstallUpdate(version: string): Promise<void> {
+  try {
+    const versionLabel = version ? `v${version}` : '새 버전'
+    const result = await dialog.showMessageBox({
+      type: 'info',
+      title: '1초캡처 업데이트 준비 완료',
+      message: `🎉 1초캡처 ${versionLabel} 업데이트가 준비됐어요!`,
+      detail:
+        '아래 체크박스를 그대로 두고 "마침"을 누르면 바로 재시작되면서 최신 버전으로 사용할 수 있어요.\n\n체크를 해제하면 지금은 닫히고, 다음에 앱을 종료했다가 다시 켤 때 자동 적용됩니다.',
+      buttons: ['마침', '나중에'],
+      defaultId: 0,
+      cancelId: 1,
+      checkboxLabel: '지금 재시작하고 업데이트 적용',
+      checkboxChecked: true,
+      noLink: true
+    })
+
+    // "마침" + 체크 상태 → 즉시 재시작
+    if (result.response === 0 && result.checkboxChecked) {
+      // isSilent=false, isForceRunAfter=true → 설치 후 자동으로 앱 재실행
+      autoUpdater.quitAndInstall(false, true)
+    } else {
+      // 다이얼로그는 닫혔지만 autoInstallOnAppQuit=true라서 나중에 종료 시 적용됨
+      // 동시에 토스트 알림으로 한 번 더 안내
+      notifyUserUpdateReady(version)
+    }
+  } catch (e) {
+    console.warn('[updater] 설치 안내 다이얼로그 실패, 알림으로 대체:', e)
+    notifyUserUpdateReady(version)
   }
 }
 

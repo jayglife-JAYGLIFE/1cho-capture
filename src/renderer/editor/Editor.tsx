@@ -273,18 +273,37 @@ export function Editor(): JSX.Element {
     })
   }, [scale, img])
 
+  const [toast, setToast] = useState<string | null>(null)
+  const showToast = useCallback((msg: string): void => {
+    setToast(msg)
+    setTimeout(() => setToast(null), 2000)
+  }, [])
+
   const onSave = useCallback(async () => {
     const dataUrl = exportImage()
-    if (!dataUrl) return
-    const full = await window.editor.save(dataUrl, 'png')
-    console.log('saved to', full)
-  }, [exportImage])
+    if (!dataUrl) {
+      showToast('저장할 이미지가 없어요')
+      return
+    }
+    try {
+      const full = await window.editor.save(dataUrl, 'png')
+      console.log('saved to', full)
+      showToast('저장 완료: ' + full)
+    } catch (e) {
+      showToast('저장 실패: ' + ((e as Error)?.message ?? 'unknown'))
+    }
+  }, [exportImage, showToast])
 
   const onCopy = useCallback(async () => {
     const dataUrl = exportImage()
     if (!dataUrl) return
-    await window.editor.copy(dataUrl)
-  }, [exportImage])
+    try {
+      await window.editor.copy(dataUrl)
+      showToast('클립보드에 복사됨')
+    } catch (e) {
+      showToast('복사 실패: ' + ((e as Error)?.message ?? 'unknown'))
+    }
+  }, [exportImage, showToast])
 
   const onClose = useCallback(async () => {
     await window.editor.close()
@@ -388,6 +407,15 @@ export function Editor(): JSX.Element {
           </Stage>
         ) : (
           <div className="text-gray-400">이미지 불러오는 중...</div>
+        )}
+        {/* v0.6.4: 저장/복사 결과 토스트 */}
+        {toast && (
+          <div
+            className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/85 text-white text-xs px-4 py-2 rounded-lg shadow-lg pointer-events-none max-w-[90%] truncate"
+            style={{ zIndex: 1000 }}
+          >
+            {toast}
+          </div>
         )}
       </div>
       <div className="px-4 py-1.5 bg-gray-800 text-xs text-gray-400 border-t border-gray-700 flex justify-between">
