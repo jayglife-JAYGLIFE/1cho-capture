@@ -50,6 +50,11 @@ export const IPC = {
   SCROLL_ADD_FRAME: 'scroll:addFrame',
   SCROLL_DONE: 'scroll:done',
   SCROLL_CANCEL: 'scroll:cancel',
+  // v0.7.0 스크롤 컨트롤러
+  SCROLL_CONTROLLER_INIT: 'scroll:controller:init',
+  SCROLL_CONTROLLER_STATUS: 'scroll:controller:status',
+  SCROLL_CONTROLLER_FINISH: 'scroll:controller:finish',
+  SCROLL_CONTROLLER_CANCEL: 'scroll:controller:cancel',
 
   // Toolbar (v0.4.0)
   TOOLBAR_CAPTURE: 'toolbar:capture',

@@ -21,7 +21,8 @@ export default defineConfig({
           overlay: resolve(__dirname, 'src/preload/overlay.ts'),
           editor: resolve(__dirname, 'src/preload/editor.ts'),
           settings: resolve(__dirname, 'src/preload/settings.ts'),
-          toolbar: resolve(__dirname, 'src/preload/toolbar.ts')
+          toolbar: resolve(__dirname, 'src/preload/toolbar.ts'),
+          scrollController: resolve(__dirname, 'src/preload/scrollController.ts')
         }
       }
     }
@@ -40,7 +41,8 @@ export default defineConfig({
           overlay: resolve(__dirname, 'src/renderer/overlay/index.html'),
           editor: resolve(__dirname, 'src/renderer/editor/index.html'),
           settings: resolve(__dirname, 'src/renderer/settings/index.html'),
-          toolbar: resolve(__dirname, 'src/renderer/toolbar/index.html')
+          toolbar: resolve(__dirname, 'src/renderer/toolbar/index.html'),
+          scrollController: resolve(__dirname, 'src/renderer/scrollController/index.html')
         }
       }
     }

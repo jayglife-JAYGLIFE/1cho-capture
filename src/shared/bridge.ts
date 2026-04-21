@@ -43,3 +43,14 @@ export interface ToolbarBridge {
   settings: () => Promise<void>
   savePosition: (pos: { x: number; y: number }) => Promise<void>
 }
+
+export interface ScrollControllerStatus {
+  frameCount: number
+  isCapturing: boolean
+}
+
+export interface ScrollControllerBridge {
+  onStatus: (cb: (s: ScrollControllerStatus) => void) => void
+  finish: () => Promise<void>
+  cancel: () => Promise<void>
+}

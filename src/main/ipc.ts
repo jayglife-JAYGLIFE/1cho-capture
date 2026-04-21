@@ -135,6 +135,9 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.SCROLL_ADD_FRAME, () => addScrollFrame())
   ipcMain.handle(IPC.SCROLL_DONE, () => finishScrollCapture())
   ipcMain.handle(IPC.SCROLL_CANCEL, () => cancelScrollCapture())
+  // v0.7.0 스크롤 컨트롤러 창 제어
+  ipcMain.handle(IPC.SCROLL_CONTROLLER_FINISH, () => finishScrollCapture())
+  ipcMain.handle(IPC.SCROLL_CONTROLLER_CANCEL, () => cancelScrollCapture())
 
   // ---------- Toolbar (v0.4.0) ----------
   ipcMain.handle(IPC.TOOLBAR_CAPTURE, async (_, mode: ToolbarCaptureMode) => {

@@ -177,8 +177,29 @@ export async function handleOverlaySelection(selection: RegionSelection): Promis
   const absX = display.bounds.x + selection.x
   const absY = display.bounds.y + selection.y
 
+  // v0.7.0: 스크롤 캡처 모드면 session 시작하고 리턴 (툴바 복원은 완료/취소 시에)
   try {
-    console.log('[overlay] capturing region:', { absX, absY, w: selection.width, h: selection.height })
+    const scrollMod = await import('../capture/scroll')
+    if (scrollMod.consumeScrollSelectionFlag()) {
+      await scrollMod.beginScrollSession(
+        { x: absX, y: absY, width: selection.width, height: selection.height },
+        display.id,
+        display.scaleFactor
+      )
+      restoreToolbarAfterCapture()
+      return
+    }
+  } catch (e) {
+    console.warn('[overlay] scroll mode check fail:', e)
+  }
+
+  try {
+    console.log('[overlay] capturing region:', {
+      absX,
+      absY,
+      w: selection.width,
+      h: selection.height
+    })
     const result = await captureRegion(absX, absY, selection.width, selection.height)
     console.log('[overlay] captured →', result.filePath ?? '(no filePath)')
     await openEditorWithImage(result)
