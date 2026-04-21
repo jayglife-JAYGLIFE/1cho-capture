@@ -7,6 +7,7 @@ export type Tool =
   | 'ellipse'
   | 'text'
   | 'mosaic'
+  | 'crop'
 
 export interface BaseShape {
   id: string

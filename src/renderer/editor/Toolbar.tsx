@@ -22,13 +22,14 @@ interface ToolbarProps {
 
 const TOOLS: Array<{ id: Tool; label: string; icon: string }> = [
   { id: 'select', label: '이동/팬', icon: '✋' },
+  { id: 'crop', label: '자르기', icon: '✂' },
   { id: 'pen', label: '펜', icon: '✎' },
   { id: 'line', label: '직선', icon: '／' },
   { id: 'arrow', label: '화살표', icon: '➜' },
   { id: 'rect', label: '사각형', icon: '▢' },
   { id: 'ellipse', label: '원', icon: '◯' },
   { id: 'text', label: '텍스트', icon: 'T' },
-  { id: 'mosaic', label: '모자이크', icon: '▦' }
+  { id: 'mosaic', label: '모자이크', icon: '🟫' }
 ]
 
 const COLORS = ['#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#8B5CF6', '#EC4899', '#111827', '#FFFFFF']

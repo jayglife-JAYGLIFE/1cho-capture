@@ -30,6 +30,14 @@ export function Editor(): JSX.Element {
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
   const [isPanning, setIsPanning] = useState(false)
   const panStartRef = useRef<{ mouseX: number; mouseY: number; panX: number; panY: number } | null>(null)
+  // v0.7.2: 자르기
+  const [pendingCrop, setPendingCrop] = useState<{
+    x: number
+    y: number
+    width: number
+    height: number
+  } | null>(null)
+  const [cropDragging, setCropDragging] = useState(false)
 
   // Receive capture from main process (v0.6.3: Blob URL 방식으로 전환)
   useEffect(() => {
@@ -83,6 +91,7 @@ export function Editor(): JSX.Element {
         setShapes([])
         setRedoStack([])
         setZoom(null) // v0.7.1: 새 이미지는 자동 fit
+        setPendingCrop(null) // v0.7.2
         lastBlobUrlRef.current = revokeAfterLoad
         try {
           window.editor.readyToShow?.()
@@ -221,6 +230,12 @@ export function Editor(): JSX.Element {
     }
     const pos = getPointer()
     if (!pos) return
+    // v0.7.2: 자르기 도구
+    if (tool === 'crop') {
+      setPendingCrop({ x: pos.x, y: pos.y, width: 0, height: 0 })
+      setCropDragging(true)
+      return
+    }
     const id = crypto.randomUUID()
     if (tool === 'pen') {
       setDrafting({ id, tool: 'pen', points: [pos.x, pos.y], color, strokeWidth })
@@ -287,6 +302,17 @@ export function Editor(): JSX.Element {
       })
       return
     }
+    // v0.7.2: 자르기 드래그
+    if (cropDragging && pendingCrop) {
+      const pos = getPointer()
+      if (!pos) return
+      setPendingCrop({
+        ...pendingCrop,
+        width: pos.x - pendingCrop.x,
+        height: pos.y - pendingCrop.y
+      })
+      return
+    }
     if (!drafting) return
     const pos = getPointer()
     if (!pos) return
@@ -310,6 +336,34 @@ export function Editor(): JSX.Element {
     if (isPanning) {
       setIsPanning(false)
       panStartRef.current = null
+      return
+    }
+    // v0.7.2: 자르기 드래그 종료
+    if (cropDragging) {
+      setCropDragging(false)
+      if (pendingCrop) {
+        const { x, y, width, height } = pendingCrop
+        const norm = {
+          x: width < 0 ? x + width : x,
+          y: height < 0 ? y + height : y,
+          width: Math.abs(width),
+          height: Math.abs(height)
+        }
+        if (norm.width < 4 || norm.height < 4) {
+          setPendingCrop(null)
+        } else {
+          // 이미지 바깥으로 나간 부분은 clip
+          if (img) {
+            const x2 = Math.min(norm.x + norm.width, img.width)
+            const y2 = Math.min(norm.y + norm.height, img.height)
+            const x1 = Math.max(norm.x, 0)
+            const y1 = Math.max(norm.y, 0)
+            setPendingCrop({ x: x1, y: y1, width: x2 - x1, height: y2 - y1 })
+          } else {
+            setPendingCrop(norm)
+          }
+        }
+      }
       return
     }
     if (!drafting) return
@@ -404,10 +458,61 @@ export function Editor(): JSX.Element {
     await window.editor.close()
   }, [])
 
+  // v0.7.2: 자르기 적용 — 현재 Stage를 crop 영역만 원본 해상도로 export
+  // 후 새 이미지로 교체. 기존 편집은 새 이미지에 베이크됨.
+  const applyCrop = useCallback((): void => {
+    if (!pendingCrop || !stageRef.current || !img) return
+    if (pendingCrop.width < 4 || pendingCrop.height < 4) return
+    try {
+      const dataUrl = stageRef.current.toDataURL({
+        x: pan.x + pendingCrop.x * scale,
+        y: pan.y + pendingCrop.y * scale,
+        width: pendingCrop.width * scale,
+        height: pendingCrop.height * scale,
+        pixelRatio: 1 / scale, // 원본 해상도로 복원
+        mimeType: 'image/png'
+      })
+      const newImg = new Image()
+      newImg.onload = () => {
+        setImg(newImg)
+        setShapes([])
+        setRedoStack([])
+        setMosaicImg(null)
+        setZoom(null) // 새 이미지 자동 fit
+        setPendingCrop(null)
+        setTool('pen')
+      }
+      newImg.onerror = () => {
+        setPendingCrop(null)
+      }
+      newImg.src = dataUrl
+    } catch (e) {
+      console.error('[editor] applyCrop', e)
+      setPendingCrop(null)
+    }
+  }, [pendingCrop, img, pan.x, pan.y, scale])
+
+  const cancelCrop = useCallback((): void => {
+    setPendingCrop(null)
+  }, [])
+
   // keyboard shortcuts
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       const mod = e.metaKey || e.ctrlKey
+      // v0.7.2: 자르기 중이면 Enter = 적용, Esc = 취소 우선
+      if (pendingCrop && !cropDragging) {
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          applyCrop()
+          return
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault()
+          cancelCrop()
+          return
+        }
+      }
       if (mod && e.key.toLowerCase() === 's') {
         e.preventDefault()
         onSave()
@@ -430,7 +535,7 @@ export function Editor(): JSX.Element {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onSave, onCopy, onClose, undo, redo, editingTextId])
+  }, [onSave, onCopy, onClose, undo, redo, editingTextId, pendingCrop, cropDragging, applyCrop, cancelCrop])
 
   const allShapes = useMemo(() => {
     return drafting ? [...shapes, drafting] : shapes
@@ -514,9 +619,94 @@ export function Editor(): JSX.Element {
                 setEditingTextId(null)
               }))}
             </Layer>
+            {/* v0.7.2: 자르기 미리보기 오버레이 */}
+            {pendingCrop && img && (() => {
+              // 드래그 중에는 음수 width/height 가능 → 시각화용 정규화
+              const x = pendingCrop.width < 0 ? pendingCrop.x + pendingCrop.width : pendingCrop.x
+              const y = pendingCrop.height < 0 ? pendingCrop.y + pendingCrop.height : pendingCrop.y
+              const width = Math.abs(pendingCrop.width)
+              const height = Math.abs(pendingCrop.height)
+              // dim 영역 4개 (top, bottom, left, right) + 선택 테두리
+              return (
+                <Layer listening={false}>
+                  {/* top */}
+                  <Rect x={0} y={0} width={img.width} height={Math.max(0, y)} fill="rgba(0,0,0,0.55)" />
+                  {/* bottom */}
+                  <Rect
+                    x={0}
+                    y={y + height}
+                    width={img.width}
+                    height={Math.max(0, img.height - (y + height))}
+                    fill="rgba(0,0,0,0.55)"
+                  />
+                  {/* left */}
+                  <Rect
+                    x={0}
+                    y={y}
+                    width={Math.max(0, x)}
+                    height={height}
+                    fill="rgba(0,0,0,0.55)"
+                  />
+                  {/* right */}
+                  <Rect
+                    x={x + width}
+                    y={y}
+                    width={Math.max(0, img.width - (x + width))}
+                    height={height}
+                    fill="rgba(0,0,0,0.55)"
+                  />
+                  {/* 테두리 */}
+                  <Rect
+                    x={x}
+                    y={y}
+                    width={width}
+                    height={height}
+                    stroke="#3B82F6"
+                    strokeWidth={1.5 / scale}
+                    dash={[6 / scale, 4 / scale]}
+                  />
+                </Layer>
+              )
+            })()}
           </Stage>
         ) : (
           <div className="text-gray-400">이미지 불러오는 중...</div>
+        )}
+
+        {/* v0.7.2: 자르기 적용/취소 버튼 (드래그 끝나면 등장) */}
+        {pendingCrop && !cropDragging && pendingCrop.width >= 4 && pendingCrop.height >= 4 && (
+          <div
+            className="absolute flex gap-2"
+            style={{
+              left: Math.max(
+                8,
+                Math.min(
+                  containerSize.width - 220,
+                  pan.x + pendingCrop.x * scale
+                )
+              ),
+              top: Math.min(
+                containerSize.height - 50,
+                pan.y + (pendingCrop.y + pendingCrop.height) * scale + 8
+              ),
+              zIndex: 500
+            }}
+          >
+            <button
+              onClick={cancelCrop}
+              className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-white text-xs rounded shadow-lg border border-gray-600"
+              title="취소 (Esc)"
+            >
+              취소
+            </button>
+            <button
+              onClick={applyCrop}
+              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded shadow-lg font-semibold"
+              title="자르기 적용 (Enter)"
+            >
+              ✓ 자르기 적용
+            </button>
+          </div>
         )}
         {/* v0.6.4: 저장/복사 결과 토스트 */}
         {toast && (
