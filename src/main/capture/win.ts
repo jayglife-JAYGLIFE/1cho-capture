@@ -61,10 +61,20 @@ function getOrCreatePs(): PsSession {
 
   // v0.6.4: PS 콘솔 인코딩을 UTF-8로 맞춰서 한글 사용자명 경로에서 발생하던
   // ENOENT 문제를 해결. 그리고 Assembly 미리 로드로 첫 캡처도 빠르게.
+  //
+  // v0.7.3: Windows DPI 스케일링(125%/150% 등) 환경에서 CopyFromScreen이
+  // logical 좌표를 올바르게 해석하도록 프로세스를 DPI-aware 로 전환.
+  // PowerShell 프로세스는 기본적으로 DPI-unaware라서 좌표가 어긋난 위치를
+  // 캡처하던 버그 수정.
+  const dpiAware =
+    `Add-Type -MemberDefinition '[DllImport(\"user32.dll\")] public static extern bool SetProcessDPIAware();' -Name WinDPI -Namespace Util -PassThru | Out-Null\n` +
+    `[Util.WinDPI]::SetProcessDPIAware() | Out-Null\n`
+
   proc.stdin.write(
     `[Console]::InputEncoding = [System.Text.Encoding]::UTF8\n` +
       `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8\n` +
       `$OutputEncoding = [System.Text.Encoding]::UTF8\n` +
+      dpiAware +
       `Add-Type -AssemblyName System.Drawing\n` +
       `Add-Type -AssemblyName System.Windows.Forms\n`
   )
