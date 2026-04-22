@@ -174,15 +174,25 @@ export async function handleOverlaySelection(selection: RegionSelection): Promis
   // macOS는 보통 16~32ms면 충분, Windows는 DWM 합성 때문에 50~80ms 권장.
   await new Promise((r) => setTimeout(r, process.platform === 'win32' ? 100 : 60))
 
-  const absX = display.bounds.x + selection.x
-  const absY = display.bounds.y + selection.y
+  // v0.7.4: Windows DPI 스케일링 환경에서 캡처 영역 어긋남 수정.
+  // Electron의 display.bounds / selection 은 모두 '논리 좌표(DIP)'.
+  // PowerShell 5.1 은 기본으로 DPI-aware (PerMonitorV2 manifest) 라서
+  // CopyFromScreen 은 '물리 픽셀' 좌표를 받음. 따라서 논리 → 물리 변환을
+  // 여기서 곱해서 전달해야 배율 100% 외 환경(125%/150% 등)에서 정확히
+  // 사용자가 드래그한 영역이 캡처됨.
+  // Mac 의 `screencapture` 는 논리 좌표를 받으므로 변환 없이 그대로.
+  const sf = process.platform === 'win32' ? display.scaleFactor : 1
+  const absX = (display.bounds.x + selection.x) * sf
+  const absY = (display.bounds.y + selection.y) * sf
+  const capW = selection.width * sf
+  const capH = selection.height * sf
 
   // v0.7.0: 스크롤 캡처 모드면 session 시작하고 리턴 (툴바 복원은 완료/취소 시에)
   try {
     const scrollMod = await import('../capture/scroll')
     if (scrollMod.consumeScrollSelectionFlag()) {
       await scrollMod.beginScrollSession(
-        { x: absX, y: absY, width: selection.width, height: selection.height },
+        { x: absX, y: absY, width: capW, height: capH },
         display.id,
         display.scaleFactor
       )
@@ -197,10 +207,11 @@ export async function handleOverlaySelection(selection: RegionSelection): Promis
     console.log('[overlay] capturing region:', {
       absX,
       absY,
-      w: selection.width,
-      h: selection.height
+      w: capW,
+      h: capH,
+      sf
     })
-    const result = await captureRegion(absX, absY, selection.width, selection.height)
+    const result = await captureRegion(absX, absY, capW, capH)
     console.log('[overlay] captured →', result.filePath ?? '(no filePath)')
     await openEditorWithImage(result)
   } catch (e) {
