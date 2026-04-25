@@ -24,6 +24,10 @@ export interface EditorBridge {
    * file:// URL은 CSP/same-origin 이슈가 있어 IPC Buffer → Blob 변환으로 교체.
    */
   loadImageBuffer?: (filePath: string) => Promise<Uint8Array>
+  /** v0.7.6: 편집 없을 때 원본 PNG 파일을 그대로 결과 폴더로 복사 (무손실) */
+  saveOriginal?: (originalFilePath: string, format?: 'png' | 'jpg') => Promise<string>
+  /** v0.7.6: 편집 없을 때 원본 PNG 파일을 클립보드에 직접 적재 (무손실) */
+  copyOriginal?: (originalFilePath: string) => Promise<void>
 }
 
 export interface SettingsBridge {

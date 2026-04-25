@@ -38,6 +38,9 @@ export function Editor(): JSX.Element {
     height: number
   } | null>(null)
   const [cropDragging, setCropDragging] = useState(false)
+  // v0.7.6: 무손실 저장/복사를 위한 원본 임시 파일 경로 추적
+  // (편집 한 번이라도 들어가거나, 자르기 적용된 후엔 null 로 해서 정상 export 경로 사용)
+  const [originalFilePath, setOriginalFilePath] = useState<string | null>(null)
 
   // Receive capture from main process (v0.6.3: Blob URL 방식으로 전환)
   useEffect(() => {
@@ -92,6 +95,8 @@ export function Editor(): JSX.Element {
         setRedoStack([])
         setZoom(null) // v0.7.1: 새 이미지는 자동 fit
         setPendingCrop(null) // v0.7.2
+        // v0.7.6: 원본 파일 경로 보존 (편집 없는 저장/복사는 원본 그대로 사용)
+        setOriginalFilePath(data.filePath ?? null)
         lastBlobUrlRef.current = revokeAfterLoad
         try {
           window.editor.readyToShow?.()
@@ -428,31 +433,46 @@ export function Editor(): JSX.Element {
     setTimeout(() => setToast(null), 2000)
   }, [])
 
+  // v0.7.6: 편집이 전혀 없으면(도형/펜/모자이크/텍스트 0개) 원본 파일 그대로 사용 → 무손실
+  const hasEdits = shapes.length > 0
+  const canUseOriginal = !hasEdits && !!originalFilePath
+
   const onSave = useCallback(async () => {
-    const dataUrl = exportImage()
-    if (!dataUrl) {
-      showToast('저장할 이미지가 없어요')
-      return
-    }
     try {
+      if (canUseOriginal && window.editor.saveOriginal && originalFilePath) {
+        const full = await window.editor.saveOriginal(originalFilePath, 'png')
+        console.log('saved (original) to', full)
+        showToast('저장 완료 (무손실): ' + full)
+        return
+      }
+      const dataUrl = exportImage()
+      if (!dataUrl) {
+        showToast('저장할 이미지가 없어요')
+        return
+      }
       const full = await window.editor.save(dataUrl, 'png')
       console.log('saved to', full)
       showToast('저장 완료: ' + full)
     } catch (e) {
       showToast('저장 실패: ' + ((e as Error)?.message ?? 'unknown'))
     }
-  }, [exportImage, showToast])
+  }, [exportImage, showToast, canUseOriginal, originalFilePath])
 
   const onCopy = useCallback(async () => {
-    const dataUrl = exportImage()
-    if (!dataUrl) return
     try {
+      if (canUseOriginal && window.editor.copyOriginal && originalFilePath) {
+        await window.editor.copyOriginal(originalFilePath)
+        showToast('클립보드에 복사됨 (무손실)')
+        return
+      }
+      const dataUrl = exportImage()
+      if (!dataUrl) return
       await window.editor.copy(dataUrl)
       showToast('클립보드에 복사됨')
     } catch (e) {
       showToast('복사 실패: ' + ((e as Error)?.message ?? 'unknown'))
     }
-  }, [exportImage, showToast])
+  }, [exportImage, showToast, canUseOriginal, originalFilePath])
 
   const onClose = useCallback(async () => {
     await window.editor.close()
@@ -460,18 +480,40 @@ export function Editor(): JSX.Element {
 
   // v0.7.2: 자르기 적용 — 현재 Stage를 crop 영역만 원본 해상도로 export
   // 후 새 이미지로 교체. 기존 편집은 새 이미지에 베이크됨.
+  // v0.7.6: 편집이 없으면 offscreen canvas + 스무싱 OFF 로 픽셀 단위 무손실 자르기
   const applyCrop = useCallback((): void => {
-    if (!pendingCrop || !stageRef.current || !img) return
+    if (!pendingCrop || !img) return
     if (pendingCrop.width < 4 || pendingCrop.height < 4) return
     try {
-      const dataUrl = stageRef.current.toDataURL({
-        x: pan.x + pendingCrop.x * scale,
-        y: pan.y + pendingCrop.y * scale,
-        width: pendingCrop.width * scale,
-        height: pendingCrop.height * scale,
-        pixelRatio: 1 / scale, // 원본 해상도로 복원
-        mimeType: 'image/png'
-      })
+      const cw = Math.round(pendingCrop.width)
+      const ch = Math.round(pendingCrop.height)
+      const cx = Math.round(pendingCrop.x)
+      const cy = Math.round(pendingCrop.y)
+      let dataUrl: string
+
+      if (shapes.length === 0) {
+        // v0.7.6 무손실 경로: Konva 거치지 않고 offscreen canvas로 직접 crop
+        const cv = document.createElement('canvas')
+        cv.width = cw
+        cv.height = ch
+        const ctx = cv.getContext('2d')!
+        ctx.imageSmoothingEnabled = false
+        ctx.drawImage(img, cx, cy, cw, ch, 0, 0, cw, ch)
+        dataUrl = cv.toDataURL('image/png')
+      } else if (stageRef.current) {
+        // 편집(도형/펜/모자이크/텍스트)이 있는 경우: Stage를 통해 crop (편집 베이크됨)
+        dataUrl = stageRef.current.toDataURL({
+          x: pan.x + pendingCrop.x * scale,
+          y: pan.y + pendingCrop.y * scale,
+          width: pendingCrop.width * scale,
+          height: pendingCrop.height * scale,
+          pixelRatio: 1 / scale,
+          mimeType: 'image/png'
+        })
+      } else {
+        return
+      }
+
       const newImg = new Image()
       newImg.onload = () => {
         setImg(newImg)
@@ -481,6 +523,8 @@ export function Editor(): JSX.Element {
         setZoom(null) // 새 이미지 자동 fit
         setPendingCrop(null)
         setTool('pen')
+        // 자르기 후엔 원본 파일과 다른 이미지가 됐으므로 무손실 경로 비활성화
+        setOriginalFilePath(null)
       }
       newImg.onerror = () => {
         setPendingCrop(null)
@@ -490,7 +534,7 @@ export function Editor(): JSX.Element {
       console.error('[editor] applyCrop', e)
       setPendingCrop(null)
     }
-  }, [pendingCrop, img, pan.x, pan.y, scale])
+  }, [pendingCrop, img, pan.x, pan.y, scale, shapes.length])
 
   const cancelCrop = useCallback((): void => {
     setPendingCrop(null)

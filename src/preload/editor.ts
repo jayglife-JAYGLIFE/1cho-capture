@@ -10,7 +10,11 @@ const bridge: EditorBridge = {
   copy: (dataUrl) => ipcRenderer.invoke(IPC.EDITOR_COPY, dataUrl),
   close: () => ipcRenderer.invoke(IPC.EDITOR_CLOSE),
   readyToShow: () => ipcRenderer.send('editor:ready-to-show'),
-  loadImageBuffer: (filePath) => ipcRenderer.invoke(IPC.EDITOR_LOAD_IMAGE, filePath)
+  loadImageBuffer: (filePath) => ipcRenderer.invoke(IPC.EDITOR_LOAD_IMAGE, filePath),
+  saveOriginal: (originalFilePath, format) =>
+    ipcRenderer.invoke(IPC.EDITOR_SAVE_ORIGINAL, { originalFilePath, format }),
+  copyOriginal: (originalFilePath) =>
+    ipcRenderer.invoke(IPC.EDITOR_COPY_ORIGINAL, originalFilePath)
 }
 
 contextBridge.exposeInMainWorld('editor', bridge)

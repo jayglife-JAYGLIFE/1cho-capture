@@ -71,6 +71,49 @@ export function registerIpcHandlers(): void {
     clipboard.writeImage(img)
   })
 
+  // v0.7.6: 편집 없을 때 무손실 저장/복사 — 원본 PNG 파일을 그대로 사용
+  ipcMain.handle(
+    IPC.EDITOR_SAVE_ORIGINAL,
+    async (_, payload: { originalFilePath: string; format?: 'png' | 'jpg' }) => {
+      const settings = getSettings()
+      const format = payload.format ?? settings.fileFormat
+      const filename = buildFilename(settings, format)
+      try {
+        await fs.mkdir(settings.saveFolder, { recursive: true })
+        const full = path.join(settings.saveFolder, filename)
+        // 원본을 그대로 복사 (PNG → PNG는 무손실, PNG → JPG는 변환 필요)
+        if (format === 'png') {
+          await fs.copyFile(payload.originalFilePath, full)
+        } else {
+          // PNG → JPG 변환 (Konva 캔버스 안 거치고 nativeImage로)
+          const img = nativeImage.createFromPath(payload.originalFilePath)
+          if (img.isEmpty()) throw new Error('원본 파일을 읽을 수 없음')
+          await fs.writeFile(full, img.toJPEG(95))
+        }
+        console.log('[editor] 원본 저장 (무손실):', full)
+        return full
+      } catch (e) {
+        const msg = (e as Error)?.message ?? String(e)
+        console.error('[editor] saveOriginal 실패:', msg)
+        try {
+          const { Notification } = await import('electron')
+          new Notification({
+            title: '1초캡처 — 저장 실패',
+            body: `파일 저장 오류: ${msg}`
+          }).show()
+        } catch {
+          /* ignore */
+        }
+        throw e
+      }
+    }
+  )
+
+  ipcMain.handle(IPC.EDITOR_COPY_ORIGINAL, async (_, originalFilePath: string) => {
+    const img = nativeImage.createFromPath(originalFilePath)
+    if (!img.isEmpty()) clipboard.writeImage(img)
+  })
+
   ipcMain.handle(IPC.EDITOR_CLOSE, () => {
     closeEditor()
   })
