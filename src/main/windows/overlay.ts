@@ -1,4 +1,4 @@
-import { BrowserWindow, Display, screen } from 'electron'
+import { BrowserWindow, Display, powerMonitor, screen } from 'electron'
 import path from 'node:path'
 import { captureRegion } from '../capture'
 import { IPC } from '../../shared/constants'
@@ -24,6 +24,8 @@ interface OverlayEntry {
 
 const entries: OverlayEntry[] = []
 let isOpen = false
+let autoResetTimer: NodeJS.Timeout | null = null
+const AUTO_RESET_MS = 60_000 // 60초 안에 사용자 액션 없으면 강제 정리
 
 function buildOverlayWindow(d: Display): OverlayEntry {
   const w = new BrowserWindow({
@@ -76,14 +78,34 @@ export function prewarmOverlayWindows(): void {
   }
 
   screen.on('display-added', (_, d) => {
+    console.log('[overlay] display-added → 오버레이 추가')
     entries.push(buildOverlayWindow(d))
   })
   screen.on('display-removed', (_, d) => {
+    console.log('[overlay] display-removed → 오버레이 제거')
     const idx = entries.findIndex((e) => e.displayId === d.id)
     if (idx >= 0) {
       const [removed] = entries.splice(idx, 1)
       if (!removed.window.isDestroyed()) removed.window.destroy()
     }
+  })
+
+  // v0.7.5: DPI/해상도/회전 등 디스플레이 메트릭 변경 시 오버레이 재구축
+  // 그렇지 않으면 미리 만든 창의 좌표/크기가 어긋나 첫 캡처가 실패함.
+  screen.on('display-metrics-changed', () => {
+    console.log('[overlay] display-metrics-changed → 오버레이 재구축')
+    rebuildAllOverlays()
+  })
+
+  // v0.7.5: 시스템 절전(suspend/sleep)에서 깨어나면 오버레이가 stale 상태가
+  // 되어 첫 단축키가 무반응인 케이스가 많아, 깨어남 직후 살짝 지연 두고 재구축.
+  powerMonitor.on('resume', () => {
+    console.log('[overlay] system resume → 1초 후 오버레이 재구축')
+    setTimeout(rebuildAllOverlays, 1000)
+  })
+  powerMonitor.on('unlock-screen', () => {
+    console.log('[overlay] unlock-screen → 오버레이 재구축')
+    setTimeout(rebuildAllOverlays, 500)
   })
 }
 
@@ -92,6 +114,42 @@ function disposeAllOverlays(): void {
     const e = entries.pop()
     if (e && !e.window.isDestroyed()) e.window.destroy()
   }
+  isOpen = false
+  if (autoResetTimer) {
+    clearTimeout(autoResetTimer)
+    autoResetTimer = null
+  }
+}
+
+/** v0.7.5: 모든 오버레이 창을 폐기하고 현재 디스플레이 구성으로 새로 만듦. */
+function rebuildAllOverlays(): void {
+  disposeAllOverlays()
+  for (const d of screen.getAllDisplays()) {
+    entries.push(buildOverlayWindow(d))
+  }
+}
+
+/** v0.7.5: 깨진 entry 정리 + 누락된 디스플레이는 새로 빌드. */
+function ensureHealthyEntries(): void {
+  // 깨진 창 제거
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const e = entries[i]
+    if (e.window.isDestroyed()) {
+      entries.splice(i, 1)
+    }
+  }
+  // 누락된 디스플레이 채움
+  const have = new Set(entries.map((e) => e.displayId))
+  for (const d of screen.getAllDisplays()) {
+    if (!have.has(d.id)) {
+      console.log('[overlay] 누락된 디스플레이 발견 → 새 오버레이 생성', d.id)
+      entries.push(buildOverlayWindow(d))
+    }
+  }
+}
+
+function isAnyOverlayVisible(): boolean {
+  return entries.some((e) => !e.window.isDestroyed() && e.window.isVisible())
 }
 
 async function waitForReady(entry: OverlayEntry, timeoutMs = 2000): Promise<void> {
@@ -109,35 +167,82 @@ async function waitForReady(entry: OverlayEntry, timeoutMs = 2000): Promise<void
 
 /** 단축키 진입점: 라이브 화면 위에 투명 오버레이 즉시 표시. */
 export async function openRegionOverlay(): Promise<void> {
-  if (isOpen) return
-  isOpen = true
+  // v0.7.5: 깨진 entries 정리 + 디스플레이 변경 자동 반영
+  ensureHealthyEntries()
 
-  // 오버레이 + 플로팅 툴바 모두 스크린샷에 찍히면 안 됨
+  // 이미 보이는 오버레이가 있으면 진짜 열린 상태 → 무시
+  if (isAnyOverlayVisible()) {
+    isOpen = true
+    return
+  }
+
+  // isOpen 플래그가 stuck 상태면 자동 리셋 (첫 단축키 무반응 → 두 번째에 작동 패턴 해결)
+  if (isOpen) {
+    console.warn('[overlay] isOpen이 true인데 보이는 창이 없음 → 자동 리셋')
+    isOpen = false
+  }
+
+  isOpen = true
   hideToolbarForCapture()
 
   try {
-    if (entries.length === 0) {
-      for (const d of screen.getAllDisplays()) {
-        entries.push(buildOverlayWindow(d))
-      }
-    }
-
+    let shownCount = 0
     for (const entry of entries) {
       await waitForReady(entry)
       if (entry.window.isDestroyed()) continue
       const display = screen.getAllDisplays().find((d) => d.id === entry.displayId)
       if (!display) continue
-      entry.window.webContents.send(IPC.OVERLAY_INIT, {
-        displayId: entry.displayId,
-        bounds: display.bounds,
-        scaleFactor: display.scaleFactor
-      })
-      entry.window.showInactive()
-      entry.window.focus()
+      try {
+        entry.window.webContents.send(IPC.OVERLAY_INIT, {
+          displayId: entry.displayId,
+          bounds: display.bounds,
+          scaleFactor: display.scaleFactor
+        })
+        entry.window.showInactive()
+        entry.window.focus()
+        shownCount++
+      } catch (showErr) {
+        console.warn('[overlay] show 실패, 해당 entry 폐기', showErr)
+        if (!entry.window.isDestroyed()) entry.window.destroy()
+      }
     }
+
+    // 단 하나도 못 띄웠으면 → 전체 재구축 후 한 번 재시도
+    if (shownCount === 0) {
+      console.warn('[overlay] 0개 표시됨 → 전체 재구축 후 재시도')
+      isOpen = false
+      rebuildAllOverlays()
+      // 재시도는 한 번만
+      for (const entry of entries) {
+        await waitForReady(entry, 2000)
+        if (entry.window.isDestroyed()) continue
+        const display = screen.getAllDisplays().find((d) => d.id === entry.displayId)
+        if (!display) continue
+        entry.window.webContents.send(IPC.OVERLAY_INIT, {
+          displayId: entry.displayId,
+          bounds: display.bounds,
+          scaleFactor: display.scaleFactor
+        })
+        entry.window.showInactive()
+        entry.window.focus()
+        shownCount++
+      }
+      if (shownCount === 0) {
+        throw new Error('재구축 후에도 오버레이를 표시할 수 없음')
+      }
+      isOpen = true
+    }
+
+    // 60초 안에 사용자 액션 없으면 자동 정리 (stuck 방지)
+    if (autoResetTimer) clearTimeout(autoResetTimer)
+    autoResetTimer = setTimeout(() => {
+      console.warn('[overlay] 60초 무액션 → 자동 정리')
+      cancelRegionOverlay()
+    }, AUTO_RESET_MS)
   } catch (e) {
     console.error('[overlay] openRegionOverlay', e)
     isOpen = false
+    closeAllOverlays()
     restoreToolbarAfterCapture()
   }
 }
@@ -149,6 +254,11 @@ export function closeAllOverlays(): void {
     }
   }
   isOpen = false
+  // v0.7.5: 자동 reset 타이머 정리
+  if (autoResetTimer) {
+    clearTimeout(autoResetTimer)
+    autoResetTimer = null
+  }
 }
 
 /** 사용자가 ESC 등으로 선택을 취소한 경우: 툴바 복원 */

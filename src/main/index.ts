@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, powerMonitor } from 'electron'
 import { createTray, rebuildMenu, setHotkeyFailureBadge } from './tray'
 import { registerHotkeys, unregisterAllHotkeys } from './hotkey'
 import { registerIpcHandlers } from './ipc'
@@ -47,6 +47,15 @@ app.whenReady().then(async () => {
   // v0.6.0: Windows에서 PowerShell 세션 프리워밍
   if (process.platform === 'win32') {
     prewarmPowerShell()
+
+    // v0.7.5: 시스템 절전에서 깨어나면 PS 세션이 죽어있을 수 있어 재시작.
+    // 이걸 안 하면 깨어난 직후 첫 캡처가 무반응 → 두 번째에 새 PS 띄워서 작동
+    // 하는 패턴이 발생함.
+    powerMonitor.on('resume', () => {
+      console.log('[main] system resume → PowerShell 세션 재시작')
+      destroyPowerShell()
+      setTimeout(prewarmPowerShell, 500)
+    })
   }
 
   registerIpcHandlers()
