@@ -1,4 +1,4 @@
-import { BrowserWindow, Display, powerMonitor, screen } from 'electron'
+import { BrowserWindow, Display, globalShortcut, powerMonitor, screen } from 'electron'
 import path from 'node:path'
 import { captureRegion } from '../capture'
 import { IPC } from '../../shared/constants'
@@ -60,6 +60,16 @@ function buildOverlayWindow(d: Display): OverlayEntry {
 
   w.webContents.once('did-finish-load', () => {
     entry.ready = true
+  })
+
+  // v0.7.7: ESC를 main 단에서 직접 잡음 (renderer keydown 리스너가 포커스 문제로
+  // 못 받는 케이스 대비). before-input-event 는 webContents가 살아있는 한 잡힘.
+  w.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return
+    if (input.key === 'Escape') {
+      event.preventDefault()
+      cancelRegionOverlay()
+    }
   })
 
   if (process.env['ELECTRON_RENDERER_URL']) {
@@ -233,6 +243,17 @@ export async function openRegionOverlay(): Promise<void> {
       isOpen = true
     }
 
+    // v0.7.7: 어떤 앱이 포커스든 ESC를 잡기 위해 글로벌 단축키 임시 등록.
+    // 오버레이 닫힐 때 unregister.
+    try {
+      globalShortcut.register('Escape', () => {
+        console.log('[overlay] global Escape → cancel')
+        cancelRegionOverlay()
+      })
+    } catch (e) {
+      console.warn('[overlay] globalShortcut Escape 등록 실패:', e)
+    }
+
     // 60초 안에 사용자 액션 없으면 자동 정리 (stuck 방지)
     if (autoResetTimer) clearTimeout(autoResetTimer)
     autoResetTimer = setTimeout(() => {
@@ -258,6 +279,14 @@ export function closeAllOverlays(): void {
   if (autoResetTimer) {
     clearTimeout(autoResetTimer)
     autoResetTimer = null
+  }
+  // v0.7.7: 임시 등록한 글로벌 ESC 해제 (다른 앱이 ESC 다시 사용할 수 있도록)
+  try {
+    if (globalShortcut.isRegistered('Escape')) {
+      globalShortcut.unregister('Escape')
+    }
+  } catch {
+    /* ignore */
   }
 }
 

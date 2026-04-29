@@ -95,6 +95,18 @@ export function Overlay(): JSX.Element {
       onMouseDown={onMouseDown}
       onMouseMove={onMouseMove}
       onMouseUp={onMouseUp}
+      // v0.7.7: 마우스 우클릭(또는 컨텍스트 메뉴 트리거)으로도 취소
+      onContextMenu={(e) => {
+        e.preventDefault()
+        window.overlay.cancel()
+      }}
+      // v0.7.7: 가운데(중간) 마우스 버튼으로도 취소 (auxclick = 비-기본 버튼 클릭)
+      onAuxClick={(e) => {
+        if (e.button === 1 || e.button === 2) {
+          e.preventDefault()
+          window.overlay.cancel()
+        }
+      }}
       style={{
         width: '100vw',
         height: '100vh',
@@ -178,7 +190,7 @@ export function Overlay(): JSX.Element {
           fontWeight: 500
         }}
       >
-        드래그하여 영역 선택 · ESC 취소
+        드래그하여 영역 선택 · ESC / 우클릭 취소
       </div>
     </div>
   )
