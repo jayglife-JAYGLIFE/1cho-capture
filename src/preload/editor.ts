@@ -14,7 +14,8 @@ const bridge: EditorBridge = {
   saveOriginal: (originalFilePath, format) =>
     ipcRenderer.invoke(IPC.EDITOR_SAVE_ORIGINAL, { originalFilePath, format }),
   copyOriginal: (originalFilePath) =>
-    ipcRenderer.invoke(IPC.EDITOR_COPY_ORIGINAL, originalFilePath)
+    ipcRenderer.invoke(IPC.EDITOR_COPY_ORIGINAL, originalFilePath),
+  saveAs: (payload) => ipcRenderer.invoke(IPC.EDITOR_SAVE_AS, payload)
 }
 
 contextBridge.exposeInMainWorld('editor', bridge)

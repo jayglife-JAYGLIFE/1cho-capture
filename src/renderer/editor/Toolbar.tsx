@@ -10,6 +10,8 @@ interface ToolbarProps {
   onUndo: () => void
   onRedo: () => void
   onSave: () => void
+  /** v0.7.8: 다른 이름으로 저장 (파일 다이얼로그) */
+  onSaveAs?: () => void
   onCopy: () => void
   onClose: () => void
   canUndo: boolean
@@ -138,6 +140,15 @@ export function Toolbar(props: ToolbarProps): JSX.Element {
       >
         복사
       </button>
+      {props.onSaveAs && (
+        <button
+          onClick={props.onSaveAs}
+          title="다른 이름으로 저장... (Cmd/Ctrl+Shift+S)"
+          className="px-3 h-10 rounded bg-gray-700 hover:bg-gray-600 text-sm"
+        >
+          다른 이름으로…
+        </button>
+      )}
       <button
         onClick={props.onSave}
         title="저장 (Cmd/Ctrl+S)"

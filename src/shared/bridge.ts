@@ -28,6 +28,16 @@ export interface EditorBridge {
   saveOriginal?: (originalFilePath: string, format?: 'png' | 'jpg') => Promise<string>
   /** v0.7.6: 편집 없을 때 원본 PNG 파일을 클립보드에 직접 적재 (무손실) */
   copyOriginal?: (originalFilePath: string) => Promise<void>
+  /**
+   * v0.7.8: 다른 이름으로 저장 — 파일 선택 다이얼로그 띄움 후 사용자가 고른 경로에 저장.
+   * 편집 없이 originalFilePath 만 있을 때는 그 파일을 그대로 복사 (무손실).
+   * 편집 있을 때는 dataUrl을 사용. 확장자에 따라 PNG/JPG 자동 결정.
+   * 사용자가 취소하면 null 반환.
+   */
+  saveAs?: (payload: {
+    dataUrl?: string
+    originalFilePath?: string
+  }) => Promise<string | null>
 }
 
 export interface SettingsBridge {

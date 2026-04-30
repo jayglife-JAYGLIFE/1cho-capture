@@ -37,6 +37,8 @@ export const IPC = {
   // v0.7.6: 편집이 없을 때 원본 파일을 그대로 복사 (무손실 보장)
   EDITOR_SAVE_ORIGINAL: 'editor:saveOriginal',
   EDITOR_COPY_ORIGINAL: 'editor:copyOriginal',
+  // v0.7.8: 다른 이름으로 저장 (파일 다이얼로그)
+  EDITOR_SAVE_AS: 'editor:saveAs',
   EDITOR_LOAD_IMAGE: 'editor:load-image',
 
   SETTINGS_GET: 'settings:get',

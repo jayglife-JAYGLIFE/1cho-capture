@@ -474,6 +474,29 @@ export function Editor(): JSX.Element {
     }
   }, [exportImage, showToast, canUseOriginal, originalFilePath])
 
+  const onSaveAs = useCallback(async () => {
+    try {
+      const payload: { dataUrl?: string; originalFilePath?: string } = {}
+      if (canUseOriginal && originalFilePath) {
+        payload.originalFilePath = originalFilePath
+      } else {
+        const dataUrl = exportImage()
+        if (!dataUrl) {
+          showToast('저장할 이미지가 없어요')
+          return
+        }
+        payload.dataUrl = dataUrl
+      }
+      const target = await window.editor.saveAs?.(payload)
+      if (target) {
+        showToast('저장 완료: ' + target)
+      }
+      // null이면 사용자가 다이얼로그 취소한 거라 토스트 안 띄움
+    } catch (e) {
+      showToast('저장 실패: ' + ((e as Error)?.message ?? 'unknown'))
+    }
+  }, [exportImage, showToast, canUseOriginal, originalFilePath])
+
   const onClose = useCallback(async () => {
     await window.editor.close()
   }, [])
@@ -557,7 +580,11 @@ export function Editor(): JSX.Element {
           return
         }
       }
-      if (mod && e.key.toLowerCase() === 's') {
+      if (mod && e.shiftKey && e.key.toLowerCase() === 's') {
+        // v0.7.8: Cmd/Ctrl+Shift+S = 다른 이름으로 저장
+        e.preventDefault()
+        onSaveAs()
+      } else if (mod && e.key.toLowerCase() === 's') {
         e.preventDefault()
         onSave()
       } else if (mod && e.key.toLowerCase() === 'c' && !editingTextId) {
@@ -579,7 +606,7 @@ export function Editor(): JSX.Element {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onSave, onCopy, onClose, undo, redo, editingTextId, pendingCrop, cropDragging, applyCrop, cancelCrop])
+  }, [onSave, onSaveAs, onCopy, onClose, undo, redo, editingTextId, pendingCrop, cropDragging, applyCrop, cancelCrop])
 
   const allShapes = useMemo(() => {
     return drafting ? [...shapes, drafting] : shapes
@@ -600,6 +627,7 @@ export function Editor(): JSX.Element {
         onUndo={undo}
         onRedo={redo}
         onSave={onSave}
+        onSaveAs={onSaveAs}
         onCopy={onCopy}
         onClose={onClose}
         canUndo={shapes.length > 0}
@@ -767,7 +795,7 @@ export function Editor(): JSX.Element {
           {img ? `${img.width} × ${img.height}` : '-'}
           {` · ${shapes.length}개 편집`}
         </span>
-        <span>Cmd/Ctrl+S 저장 · Cmd/Ctrl+C 복사 · Cmd/Ctrl+Z 되돌리기 · Esc 닫기</span>
+        <span>Cmd/Ctrl+S 저장 · Cmd/Ctrl+Shift+S 다른 이름으로 · Cmd/Ctrl+C 복사 · Cmd/Ctrl+Z 되돌리기 · Esc 닫기</span>
       </div>
     </div>
   )

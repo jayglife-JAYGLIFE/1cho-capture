@@ -114,6 +114,69 @@ export function registerIpcHandlers(): void {
     if (!img.isEmpty()) clipboard.writeImage(img)
   })
 
+  // v0.7.8: 다른 이름으로 저장 — 사용자가 직접 경로 선택
+  ipcMain.handle(
+    IPC.EDITOR_SAVE_AS,
+    async (event, payload: { dataUrl?: string; originalFilePath?: string }) => {
+      const settings = getSettings()
+      const defaultFilename = buildFilename(settings, settings.fileFormat)
+      const win = BrowserWindow.fromWebContents(event.sender) ?? undefined
+      const dialogOpts: Electron.SaveDialogOptions = {
+        title: '다른 이름으로 저장',
+        defaultPath: path.join(settings.saveFolder, defaultFilename),
+        filters: [
+          { name: 'PNG 이미지', extensions: ['png'] },
+          { name: 'JPG 이미지', extensions: ['jpg', 'jpeg'] }
+        ]
+      }
+      const result = win
+        ? await dialog.showSaveDialog(win, dialogOpts)
+        : await dialog.showSaveDialog(dialogOpts)
+      if (result.canceled || !result.filePath) return null
+
+      const targetPath = result.filePath
+      const ext = path.extname(targetPath).toLowerCase()
+      const useFormat: 'png' | 'jpg' = ext === '.jpg' || ext === '.jpeg' ? 'jpg' : 'png'
+
+      try {
+        // 무손실 경로 우선
+        if (payload.originalFilePath) {
+          if (useFormat === 'png') {
+            await fs.copyFile(payload.originalFilePath, targetPath)
+          } else {
+            const img = nativeImage.createFromPath(payload.originalFilePath)
+            if (img.isEmpty()) throw new Error('원본 파일을 읽을 수 없음')
+            await fs.writeFile(targetPath, img.toJPEG(95))
+          }
+        } else if (payload.dataUrl) {
+          if (useFormat === 'jpg') {
+            const img = nativeImage.createFromDataURL(payload.dataUrl)
+            await fs.writeFile(targetPath, img.toJPEG(95))
+          } else {
+            await fs.writeFile(targetPath, dataUrlToBuffer(payload.dataUrl))
+          }
+        } else {
+          throw new Error('저장할 데이터가 없음')
+        }
+        console.log('[editor] 다른 이름으로 저장:', targetPath)
+        return targetPath
+      } catch (e) {
+        const msg = (e as Error)?.message ?? String(e)
+        console.error('[editor] saveAs 실패:', msg)
+        try {
+          const { Notification } = await import('electron')
+          new Notification({
+            title: '1초캡처 — 저장 실패',
+            body: `다른 이름으로 저장 오류: ${msg}`
+          }).show()
+        } catch {
+          /* ignore */
+        }
+        throw e
+      }
+    }
+  )
+
   ipcMain.handle(IPC.EDITOR_CLOSE, () => {
     closeEditor()
   })
