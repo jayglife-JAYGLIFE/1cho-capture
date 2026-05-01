@@ -313,18 +313,36 @@ export async function handleOverlaySelection(selection: RegionSelection): Promis
   // macOS는 보통 16~32ms면 충분, Windows는 DWM 합성 때문에 50~80ms 권장.
   await new Promise((r) => setTimeout(r, process.platform === 'win32' ? 100 : 60))
 
-  // v0.7.4: Windows DPI 스케일링 환경에서 캡처 영역 어긋남 수정.
-  // Electron의 display.bounds / selection 은 모두 '논리 좌표(DIP)'.
-  // PowerShell 5.1 은 기본으로 DPI-aware (PerMonitorV2 manifest) 라서
-  // CopyFromScreen 은 '물리 픽셀' 좌표를 받음. 따라서 논리 → 물리 변환을
-  // 여기서 곱해서 전달해야 배율 100% 외 환경(125%/150% 등)에서 정확히
-  // 사용자가 드래그한 영역이 캡처됨.
-  // Mac 의 `screencapture` 는 논리 좌표를 받으므로 변환 없이 그대로.
-  const sf = process.platform === 'win32' ? display.scaleFactor : 1
-  const absX = (display.bounds.x + selection.x) * sf
-  const absY = (display.bounds.y + selection.y) * sf
-  const capW = selection.width * sf
-  const capH = selection.height * sf
+  // v0.7.9: Windows 멀티 모니터 + per-monitor DPI 정확 변환.
+  // 이전 v0.7.4 ~ v0.7.8 은 단순히 (display.bounds + selection) * scaleFactor 로
+  // 변환했는데, 두 모니터의 배율이 다른 경우 (예: 메인 150%, 보조 100%)
+  // 보조 모니터의 물리 origin 이 '메인 모니터의 물리 너비'에 의존하기 때문에
+  // 보조 모니터 좌표가 어긋나 일부만 캡처되는 버그가 있었음.
+  // Electron 의 screen.dipToScreenRect 가 Windows 내부적으로 MonitorFromPoint
+  // + GetDpiForMonitor 를 호출해 멀티 모니터/다른 DPI 를 자동 처리해주므로 사용.
+  // Mac screencapture 는 논리 좌표(points)를 받으므로 변환 없이 그대로.
+  let absX: number
+  let absY: number
+  let capW: number
+  let capH: number
+  const dipRect = {
+    x: display.bounds.x + selection.x,
+    y: display.bounds.y + selection.y,
+    width: selection.width,
+    height: selection.height
+  }
+  if (process.platform === 'win32') {
+    const phys = screen.dipToScreenRect(null, dipRect)
+    absX = phys.x
+    absY = phys.y
+    capW = phys.width
+    capH = phys.height
+  } else {
+    absX = dipRect.x
+    absY = dipRect.y
+    capW = dipRect.width
+    capH = dipRect.height
+  }
 
   // v0.7.0: 스크롤 캡처 모드면 session 시작하고 리턴 (툴바 복원은 완료/취소 시에)
   try {
@@ -348,7 +366,7 @@ export async function handleOverlaySelection(selection: RegionSelection): Promis
       absY,
       w: capW,
       h: capH,
-      sf
+      platform: process.platform
     })
     const result = await captureRegion(absX, absY, capW, capH)
     console.log('[overlay] captured →', result.filePath ?? '(no filePath)')
