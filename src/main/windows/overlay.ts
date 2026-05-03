@@ -162,6 +162,74 @@ function isAnyOverlayVisible(): boolean {
   return entries.some((e) => !e.window.isDestroyed() && e.window.isVisible())
 }
 
+/**
+ * v0.7.10: 오버레이 1개를 안전하게 보여주는 통합 헬퍼.
+ *
+ * 듀얼 모니터(서로 다른 DPI/배율) 환경에서 미리 만들어둔 BrowserWindow 의
+ * x/y/width/height 가 OS 입장에선 stale 일 수 있어, 매 show 직전마다
+ * 현재 display.bounds 로 강제 재적용한다. 또한 alwaysOnTop 'screen-saver'
+ * 레벨도 매번 재확인해서 작업표시줄 위로 확실히 뜨도록 한다.
+ *
+ * 적용된 실제 bounds 가 요청과 다르면 경고 로그 (Windows 작업표시줄 등에
+ * 의해 클리핑됐을 가능성).
+ */
+function showOverlayEntry(entry: OverlayEntry, display: Display): void {
+  if (entry.window.isDestroyed()) return
+
+  // 1. bounds 강제 재적용
+  try {
+    entry.window.setBounds(display.bounds, false)
+  } catch (e) {
+    console.warn('[overlay] setBounds 실패:', e)
+  }
+
+  // 2. alwaysOnTop 레벨 재확인 (작업표시줄 위로 확실히 뜨게)
+  try {
+    entry.window.setAlwaysOnTop(true, 'screen-saver')
+    entry.window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  } catch (e) {
+    console.warn('[overlay] setAlwaysOnTop 실패:', e)
+  }
+
+  // 3. init payload 전송
+  entry.window.webContents.send(IPC.OVERLAY_INIT, {
+    displayId: entry.displayId,
+    bounds: display.bounds,
+    scaleFactor: display.scaleFactor
+  })
+
+  // 4. show
+  entry.window.showInactive()
+  entry.window.focus()
+
+  // 5. 적용된 bounds 검증 — Windows 작업표시줄 등에 의해 클리핑됐는지 체크
+  try {
+    const actual = entry.window.getBounds()
+    if (
+      actual.x !== display.bounds.x ||
+      actual.y !== display.bounds.y ||
+      actual.width !== display.bounds.width ||
+      actual.height !== display.bounds.height
+    ) {
+      console.warn(
+        '[overlay] bounds 불일치 — 요청:',
+        display.bounds,
+        '실제:',
+        actual,
+        '→ 강제 재적용 시도'
+      )
+      // 한 번 더 시도 — show 후엔 setBounds가 더 잘 먹는 경우가 있음
+      try {
+        entry.window.setBounds(display.bounds, false)
+      } catch {
+        /* ignore */
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 async function waitForReady(entry: OverlayEntry, timeoutMs = 2000): Promise<void> {
   if (entry.ready) return
   return new Promise((resolve) => {
@@ -203,13 +271,7 @@ export async function openRegionOverlay(): Promise<void> {
       const display = screen.getAllDisplays().find((d) => d.id === entry.displayId)
       if (!display) continue
       try {
-        entry.window.webContents.send(IPC.OVERLAY_INIT, {
-          displayId: entry.displayId,
-          bounds: display.bounds,
-          scaleFactor: display.scaleFactor
-        })
-        entry.window.showInactive()
-        entry.window.focus()
+        showOverlayEntry(entry, display)
         shownCount++
       } catch (showErr) {
         console.warn('[overlay] show 실패, 해당 entry 폐기', showErr)
@@ -228,13 +290,7 @@ export async function openRegionOverlay(): Promise<void> {
         if (entry.window.isDestroyed()) continue
         const display = screen.getAllDisplays().find((d) => d.id === entry.displayId)
         if (!display) continue
-        entry.window.webContents.send(IPC.OVERLAY_INIT, {
-          displayId: entry.displayId,
-          bounds: display.bounds,
-          scaleFactor: display.scaleFactor
-        })
-        entry.window.showInactive()
-        entry.window.focus()
+        showOverlayEntry(entry, display)
         shownCount++
       }
       if (shownCount === 0) {
