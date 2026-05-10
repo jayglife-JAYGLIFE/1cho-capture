@@ -18,7 +18,17 @@ export const DEFAULT_SETTINGS: Omit<AppSettings, 'saveFolder'> = {
   toolbar: {
     showOnStartup: true
   },
-  autoStart: true
+  autoStart: true,
+  captureBox: {
+    lastSize: { width: 800, height: 600 },
+    presets: [
+      { id: 'hd', name: 'HD 720p', width: 1280, height: 720 },
+      { id: 'fhd', name: 'FHD 1080p', width: 1920, height: 1080 },
+      { id: 'square', name: '정사각 800', width: 800, height: 800 },
+      { id: 'twitter', name: '트위터 카드', width: 1200, height: 628 },
+      { id: 'youtube', name: '유튜브 썸네일', width: 1280, height: 720 }
+    ]
+  }
 }
 
 export const IPC = {
@@ -65,5 +75,15 @@ export const IPC = {
   TOOLBAR_CAPTURE: 'toolbar:capture',
   TOOLBAR_HIDE: 'toolbar:hide',
   TOOLBAR_SETTINGS: 'toolbar:settings',
-  TOOLBAR_SAVE_POSITION: 'toolbar:savePosition'
+  TOOLBAR_SAVE_POSITION: 'toolbar:savePosition',
+
+  // v0.8.0 창 캡처 박스
+  CAPTURE_BOX_OPEN: 'captureBox:open',
+  CAPTURE_BOX_INIT: 'captureBox:init',
+  CAPTURE_BOX_SHOOT: 'captureBox:shoot',
+  CAPTURE_BOX_CLOSE: 'captureBox:close',
+  CAPTURE_BOX_RESIZE: 'captureBox:resize',
+  CAPTURE_BOX_GET_PRESETS: 'captureBox:getPresets',
+  CAPTURE_BOX_SET_PRESETS: 'captureBox:setPresets',
+  CAPTURE_BOX_SIZE_CHANGED: 'captureBox:sizeChanged'
 } as const

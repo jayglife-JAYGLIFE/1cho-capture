@@ -19,6 +19,12 @@ import {
   restoreToolbarAfterCapture
 } from './windows/toolbar'
 import {
+  openCaptureBox,
+  closeCaptureBox,
+  resizeCaptureBox,
+  shootCaptureBox
+} from './windows/captureBox'
+import {
   startScrollCapture,
   addScrollFrame,
   finishScrollCapture,
@@ -236,6 +242,32 @@ export function registerIpcHandlers(): void {
     if (r) await openEditorWithImage(r)
   })
 
+  // ---------- 창 캡처 박스 (v0.8.0) ----------
+  ipcMain.handle(IPC.CAPTURE_BOX_OPEN, () => openCaptureBox())
+  ipcMain.handle(IPC.CAPTURE_BOX_SHOOT, () => shootCaptureBox())
+  ipcMain.handle(IPC.CAPTURE_BOX_CLOSE, () => closeCaptureBox())
+  ipcMain.handle(
+    IPC.CAPTURE_BOX_RESIZE,
+    (_, payload: { width: number; height: number }) => {
+      resizeCaptureBox(payload.width, payload.height)
+    }
+  )
+  ipcMain.handle(IPC.CAPTURE_BOX_GET_PRESETS, () => {
+    return getSettings().captureBox?.presets ?? []
+  })
+  ipcMain.handle(
+    IPC.CAPTURE_BOX_SET_PRESETS,
+    (_, presets: import('../shared/types').CaptureBoxPreset[]) => {
+      const current = getSettings().captureBox
+      setSettings({
+        captureBox: {
+          ...current,
+          presets
+        }
+      })
+    }
+  )
+
   // ---------- Scroll capture ----------
   ipcMain.handle(IPC.CAPTURE_SCROLL, () => startScrollCapture())
   ipcMain.handle(IPC.SCROLL_ADD_FRAME, () => addScrollFrame())
@@ -250,9 +282,13 @@ export function registerIpcHandlers(): void {
     // 툴바 자체가 스크린샷에 찍히지 않게 숨긴 후 캡처 실행
     hideToolbarForCapture()
     try {
-      if (mode === 'region' || mode === 'window') {
-        // 창 캡처는 MVP에서 영역 캡처로 폴백
+      if (mode === 'region') {
         await openRegionOverlay()
+      } else if (mode === 'window') {
+        // v0.8.0: 창 캡처는 리사이즈 가능한 박스 모드
+        openCaptureBox()
+        // 박스가 떠있는 동안 툴바도 보이는 게 자연스러움 → 즉시 복원
+        restoreToolbarAfterCapture()
       } else if (mode === 'fullscreen') {
         const r = await captureFullScreen()
         await openEditorWithImage(r)

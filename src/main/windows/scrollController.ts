@@ -78,7 +78,17 @@ export function openScrollController(): void {
 }
 
 function defaultPosition(): { x: number; y: number } {
-  const { workArea } = screen.getPrimaryDisplay()
+  // v0.8.0: primary 모니터가 아닌 '현재 사용자 마우스가 있는 모니터' 하단에 띄움.
+  // 이전엔 보조 모니터에서 스크롤 캡처 시작해도 컨트롤러가 primary에 떠서
+  // 사용자가 못 보는 케이스 발생.
+  let display: Electron.Display
+  try {
+    const cursor = screen.getCursorScreenPoint()
+    display = screen.getDisplayNearestPoint(cursor)
+  } catch {
+    display = screen.getPrimaryDisplay()
+  }
+  const { workArea } = display
   return {
     x: Math.round(workArea.x + (workArea.width - WIDTH) / 2),
     y: Math.round(workArea.y + workArea.height - HEIGHT - 60)

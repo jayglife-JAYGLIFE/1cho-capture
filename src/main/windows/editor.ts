@@ -1,4 +1,4 @@
-import { BrowserWindow, clipboard, nativeImage, ipcMain } from 'electron'
+import { BrowserWindow, clipboard, nativeImage, ipcMain, screen } from 'electron'
 import path from 'node:path'
 import { IPC } from '../../shared/constants'
 import type { CaptureResult } from '../../shared/types'
@@ -17,15 +17,40 @@ let pendingInit: CaptureResult | null = null
 
 const EDITOR_READY_SIGNAL = 'editor:ready-to-show'
 
+// v0.8.0: 편집기 창을 사용자가 보고 있는 모니터로 강제 이동 + 확실히 표시.
+// 이전엔 편집기가 다른 모니터에 hide된 채로 있을 때 show만 호출하면 사용자
+// 시야 밖에 떠서 "캡처는 됐는데 편집기가 안 뜬다"고 느꼈음.
+function showEditorOnActiveDisplay(): void {
+  if (!editorWindow || editorWindow.isDestroyed()) return
+  try {
+    const cursor = screen.getCursorScreenPoint()
+    const display = screen.getDisplayNearestPoint(cursor)
+    const { workArea } = display
+    const editorBounds = editorWindow.getBounds()
+    // 사용자 모니터 작업영역에 들어오게 위치 조정
+    const w = Math.min(editorBounds.width, workArea.width)
+    const h = Math.min(editorBounds.height, workArea.height)
+    const x = workArea.x + Math.max(0, Math.round((workArea.width - w) / 2))
+    const y = workArea.y + Math.max(0, Math.round((workArea.height - h) / 2))
+    editorWindow.setBounds({ x, y, width: w, height: h })
+  } catch (e) {
+    console.warn('[editor] 위치 조정 실패:', e)
+  }
+  // minimize 상태면 복원
+  if (editorWindow.isMinimized()) editorWindow.restore()
+  if (!editorWindow.isVisible()) editorWindow.show()
+  editorWindow.moveTop()
+  editorWindow.focus()
+}
+
 // 한 번만 등록
 let readyHandlerRegistered = false
 function registerReadyHandler(): void {
   if (readyHandlerRegistered) return
   readyHandlerRegistered = true
   ipcMain.on(EDITOR_READY_SIGNAL, () => {
-    if (editorWindow && !editorWindow.isDestroyed() && !editorWindow.isVisible()) {
-      editorWindow.show()
-      editorWindow.focus()
+    if (editorWindow && !editorWindow.isDestroyed()) {
+      showEditorOnActiveDisplay()
     }
   })
 }
@@ -107,9 +132,8 @@ export async function openEditorWithImage(result: CaptureResult): Promise<void> 
   // show는 renderer가 EDITOR_READY_SIGNAL을 보내오면 실행 (빈 창 깜빡임 방지).
   // 하지만 안전장치: 350ms 내에 신호가 없으면 그냥 show (이미지 로드 실패 대비)
   setTimeout(() => {
-    if (editorWindow && !editorWindow.isDestroyed() && !editorWindow.isVisible()) {
-      editorWindow.show()
-      editorWindow.focus()
+    if (editorWindow && !editorWindow.isDestroyed()) {
+      showEditorOnActiveDisplay()
     }
   }, 350)
 }

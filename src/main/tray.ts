@@ -2,6 +2,7 @@ import { Tray, Menu, MenuItemConstructorOptions, nativeImage, app } from 'electr
 // v0.5.1: 트레이 툴팁에 현재 버전을 표시해 자동 업데이트 적용 여부를 한눈에 확인
 import path from 'node:path'
 import { openRegionOverlay } from './windows/overlay'
+import { openCaptureBox } from './windows/captureBox'
 import { captureFullScreen } from './capture'
 import { openEditorWithImage } from './windows/editor'
 import { openSettingsWindow } from './windows/settings'
@@ -94,9 +95,9 @@ export function rebuildMenu(): void {
       }
     },
     {
-      label: '창 캡처',
+      label: '창 캡처 (박스)',
       accelerator: 'Ctrl+Shift+X',
-      click: () => openRegionOverlay()
+      click: () => openCaptureBox()
     },
     {
       label: '스크롤 캡처',

@@ -3,6 +3,7 @@ import { app } from 'electron'
 import path from 'node:path'
 import type { AppSettings } from '../shared/types'
 import { DEFAULT_HOTKEYS, DEFAULT_SETTINGS } from '../shared/constants'
+import type { CaptureBoxSettings } from '../shared/types'
 
 const HOTKEY_SCHEMA_VERSION = 2
 
@@ -29,6 +30,13 @@ if (looksLikeV1) {
   store.set('hotkeys', DEFAULT_HOTKEYS)
   store.set('_hotkeyVersion', HOTKEY_SCHEMA_VERSION)
   console.log('[store] 단축키를 v2 기본값으로 마이그레이션:', DEFAULT_HOTKEYS)
+}
+
+// v0.8.0: captureBox 설정이 없는 기존 사용자는 default 적용
+const existingCaptureBox = store.get('captureBox') as CaptureBoxSettings | undefined
+if (!existingCaptureBox || !existingCaptureBox.lastSize || !existingCaptureBox.presets) {
+  store.set('captureBox', DEFAULT_SETTINGS.captureBox)
+  console.log('[store] captureBox 기본값 적용')
 }
 
 export function getSettings(): AppSettings {

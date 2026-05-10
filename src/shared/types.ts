@@ -19,6 +19,22 @@ export interface AppSettings {
   toolbar: ToolbarSettings
   /** v0.6.2: OS 시작 시 자동 실행 여부 (기본 true) */
   autoStart: boolean
+  /** v0.8.0: 창 캡처 박스 프리셋 + 마지막 사용 사이즈 */
+  captureBox: CaptureBoxSettings
+}
+
+export interface CaptureBoxPreset {
+  id: string
+  name: string
+  width: number
+  height: number
+}
+
+export interface CaptureBoxSettings {
+  /** 마지막 사용한 박스 크기 (다음 호출 시 자동 복원) */
+  lastSize: { width: number; height: number }
+  /** 사용자 정의 프리셋 목록 */
+  presets: CaptureBoxPreset[]
 }
 
 export interface ToolbarSettings {

@@ -3,6 +3,7 @@ import type { HotkeyConfig } from '../shared/types'
 import { captureFullScreen } from './capture'
 import { openEditorWithImage, getLastCapture } from './windows/editor'
 import { openRegionOverlay } from './windows/overlay'
+import { openCaptureBox } from './windows/captureBox'
 import { startScrollCapture } from './capture/scroll'
 
 /**
@@ -28,8 +29,8 @@ export function registerHotkeys(cfg: HotkeyConfig): RegisterResult {
     await openEditorWithImage(r)
   })
   tryRegister(cfg.window, () => {
-    // MVP: 창 picker는 차후 구현. 임시로 영역 캡처로 폴백.
-    openRegionOverlay()
+    // v0.8.0: 리사이즈 가능한 박스 모드로 창 캡처 구현
+    openCaptureBox()
   })
   tryRegister(cfg.scroll, () => startScrollCapture())
   tryRegister(cfg.repeat, async () => {

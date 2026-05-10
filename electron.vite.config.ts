@@ -22,7 +22,8 @@ export default defineConfig({
           editor: resolve(__dirname, 'src/preload/editor.ts'),
           settings: resolve(__dirname, 'src/preload/settings.ts'),
           toolbar: resolve(__dirname, 'src/preload/toolbar.ts'),
-          scrollController: resolve(__dirname, 'src/preload/scrollController.ts')
+          scrollController: resolve(__dirname, 'src/preload/scrollController.ts'),
+          captureBox: resolve(__dirname, 'src/preload/captureBox.ts')
         }
       }
     }
@@ -42,7 +43,8 @@ export default defineConfig({
           editor: resolve(__dirname, 'src/renderer/editor/index.html'),
           settings: resolve(__dirname, 'src/renderer/settings/index.html'),
           toolbar: resolve(__dirname, 'src/renderer/toolbar/index.html'),
-          scrollController: resolve(__dirname, 'src/renderer/scrollController/index.html')
+          scrollController: resolve(__dirname, 'src/renderer/scrollController/index.html'),
+          captureBox: resolve(__dirname, 'src/renderer/captureBox/index.html')
         }
       }
     }

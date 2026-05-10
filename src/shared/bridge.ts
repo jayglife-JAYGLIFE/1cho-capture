@@ -68,3 +68,28 @@ export interface ScrollControllerBridge {
   finish: () => Promise<void>
   cancel: () => Promise<void>
 }
+
+// v0.8.0: 창 캡처 박스 브리지
+import type { CaptureBoxPreset } from './types'
+
+export interface CaptureBoxInitData {
+  width: number
+  height: number
+  presets: CaptureBoxPreset[]
+}
+
+export interface CaptureBoxBridge {
+  onInit: (cb: (data: CaptureBoxInitData) => void) => void
+  /** 사용자가 native resize handle로 크기 바꿀 때 main → renderer */
+  onSizeChanged: (cb: (data: { width: number; height: number }) => void) => void
+  /** 박스 안의 화면 영역을 캡처 → 편집기 오픈 */
+  shoot: () => Promise<void>
+  /** 박스 닫기 */
+  close: () => Promise<void>
+  /** 사용자가 입력으로 크기 변경 시 main에 새 크기 전달 */
+  resize: (width: number, height: number) => Promise<void>
+  /** 프리셋 가져오기 */
+  getPresets: () => Promise<CaptureBoxPreset[]>
+  /** 프리셋 저장 (전체 배열 교체) */
+  setPresets: (presets: CaptureBoxPreset[]) => Promise<void>
+}
