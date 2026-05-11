@@ -29,6 +29,8 @@ interface ScrollFrame {
   width: number
   height: number
   hash: string // 전체 해시 (변경 감지용)
+  /** v0.8.1: capture 시점에 미리 계산해둔 직전 frame과의 overlap (높이 px). stitch 시 재사용. */
+  precomputedOverlap?: number
 }
 
 interface ScrollSession {
@@ -141,7 +143,22 @@ async function captureAndMaybeAppend(): Promise<void> {
   if (last.hash === hash) return
 
   const frame = decodeFrame(buf, hash)
-  if (frame) session.frames.push(frame)
+  if (!frame) return
+
+  // v0.8.1: 새 프레임을 무조건 추가하지 말고 overlap 미리 계산
+  // - 새로 추가될 row 수 = frame.height - overlap
+  // - 너무 작으면 (스크롤 거의 안 함, 또는 anti-aliasing 노이즈) skip
+  //   → "3컷씩 중복 캡처" 문제 해결
+  const overlap = findOverlap(last, frame)
+  const newContentRows = frame.height - overlap
+  const MIN_NEW_ROWS = 16
+  if (newContentRows < MIN_NEW_ROWS) {
+    // 거의 동일한 프레임 — 사용자가 스크롤 안 했거나 미세 anti-aliasing 차이만
+    return
+  }
+  // overlap 정보를 frame에 저장해두면 stitch 시 재계산 불필요
+  frame.precomputedOverlap = overlap
+  session.frames.push(frame)
   updateScrollControllerStatus({
     frameCount: session.frames.length,
     isCapturing: true
@@ -222,27 +239,59 @@ export async function addScrollFrame(): Promise<null> {
 // ============================================================================
 
 /**
- * 인접 프레임 간 overlap 높이를 찾는다.
- * prev 하단과 next 상단이 같은 row들을 찾아서 그 개수를 반환.
+ * v0.8.1: row를 fuzzy signature로 축약.
+ * 각 row를 16픽셀 단위 블록으로 나누고 블록별 평균 RGB를 16단계(4비트)로
+ * 양자화. 같은 콘텐츠라도 anti-aliasing/sub-pixel 스크롤로 픽셀이 미세
+ * 달라지는 케이스를 흡수해, exact MD5 hash 매칭이 실패하던 문제를 해결.
  *
- * - 각 row를 md5 해시로 축약 → O(H) 해시 계산 + O(H) 매칭
- * - exact match 기준 (픽셀이 정확히 같아야 overlap으로 간주)
- * - 1줄만 우연히 일치하는 false positive 방지: 최소 4줄 연속 일치 요구
+ * 결과: 동일한 콘텐츠 row → 같은 signature 문자열
+ *        진짜 다른 콘텐츠 row → 다른 signature 문자열
  */
-function hashRows(bitmap: Buffer, width: number, height: number): string[] {
-  const rowBytes = width * 4
-  const hashes: string[] = new Array(height)
-  for (let y = 0; y < height; y++) {
-    const h = crypto.createHash('md5')
-    h.update(bitmap.subarray(y * rowBytes, (y + 1) * rowBytes))
-    hashes[y] = h.digest('hex')
+const BLOCK = 16
+
+function rowSignature(bitmap: Buffer, width: number, y: number): string {
+  const rowStart = y * width * 4
+  const numBlocks = Math.floor(width / BLOCK)
+  // numBlocks * 3 chars (RGB 각 1 hex char = 4비트 양자화)
+  const parts: string[] = new Array(numBlocks)
+  for (let b = 0; b < numBlocks; b++) {
+    let r = 0
+    let g = 0
+    let bl = 0
+    const blockBase = rowStart + b * BLOCK * 4
+    for (let i = 0; i < BLOCK; i++) {
+      const p = blockBase + i * 4
+      // bitmap은 BGRA (Electron nativeImage.getBitmap)
+      bl += bitmap[p]
+      g += bitmap[p + 1]
+      r += bitmap[p + 2]
+    }
+    const ar = (r / BLOCK) >> 4
+    const ag = (g / BLOCK) >> 4
+    const ab = (bl / BLOCK) >> 4
+    parts[b] =
+      ar.toString(16) + ag.toString(16) + ab.toString(16)
   }
-  return hashes
+  return parts.join('')
 }
 
+function hashRows(bitmap: Buffer, width: number, height: number): string[] {
+  const sigs: string[] = new Array(height)
+  for (let y = 0; y < height; y++) {
+    sigs[y] = rowSignature(bitmap, width, y)
+  }
+  return sigs
+}
+
+/**
+ * 인접 프레임 간 overlap 높이를 찾는다.
+ * prev 하단과 next 상단의 row signature 들이 일치하는 시작점을 탐색.
+ * - 최소 8줄 연속 일치 + prev 끝까지 이어지는 경우에만 유효
+ * - 가장 큰 overlap (= prev 에서 더 위쪽에서 시작하는 매칭) 우선
+ */
 function findOverlap(prev: ScrollFrame, next: ScrollFrame): number {
   if (prev.width !== next.width) return 0
-  const MIN_MATCH = 4
+  const MIN_MATCH = 8
   const MAX_SEARCH = Math.min(prev.height, next.height, 600)
 
   const prevHashes = hashRows(prev.bitmap, prev.width, prev.height)
@@ -250,15 +299,11 @@ function findOverlap(prev: ScrollFrame, next: ScrollFrame): number {
 
   const firstNextHash = nextHashes[0]
 
-  // prev 하단 MAX_SEARCH 범위에서 firstNextHash와 일치하는 row 찾기.
-  // 가장 큰 overlap(= prev에서 제일 위쪽 시작점)부터 검사해 최대 겹침 선택.
   const startMin = Math.max(0, prev.height - MAX_SEARCH)
   for (let startY = startMin; startY < prev.height; startY++) {
     if (prevHashes[startY] !== firstNextHash) continue
 
     const candidateOverlap = prev.height - startY
-    // 너무 작으면 의미 없음 (랜덤 일치 가능성)
-    // 다만 1줄뿐이면 그냥 넘김
     let matchCount = 0
     const maxMatch = Math.min(candidateOverlap, next.height)
     for (let i = 0; i < maxMatch; i++) {
@@ -266,7 +311,6 @@ function findOverlap(prev: ScrollFrame, next: ScrollFrame): number {
       matchCount++
     }
     if (matchCount >= MIN_MATCH && matchCount === candidateOverlap) {
-      // prev 맨 끝까지 이어지는 일치가 발견됨 = 이게 overlap
       return candidateOverlap
     }
   }
@@ -295,7 +339,11 @@ function stitchFrames(frames: ScrollFrame[]): {
       segments.push({ frame: next, skipTop: 0, useHeight: next.height })
       continue
     }
-    const overlap = findOverlap(prev, next)
+    // v0.8.1: capture 시점에 계산해둔 overlap이 있으면 재사용 (계산 비용 절약 + 일관성)
+    const overlap =
+      typeof next.precomputedOverlap === 'number'
+        ? next.precomputedOverlap
+        : findOverlap(prev, next)
     const useHeight = next.height - overlap
     if (useHeight <= 0) {
       // 새 내용 없음 — skip
