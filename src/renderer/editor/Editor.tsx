@@ -661,7 +661,9 @@ export function Editor(): JSX.Element {
                     : 'crosshair'
             }}
           >
-            <Layer listening={false}>
+            {/* v0.8.2: imageSmoothingEnabled=false 로 픽셀 sharp 렌더링
+                줌인 시 흐려보임 방지 (저장은 어차피 원본 픽셀 그대로) */}
+            <Layer listening={false} imageSmoothingEnabled={false}>
               <KImage image={img} />
             </Layer>
             {/* Mosaic layer: clipped mosaic canvas shown only under mosaic shapes */}
@@ -743,6 +745,20 @@ export function Editor(): JSX.Element {
           </Stage>
         ) : (
           <div className="text-gray-400">이미지 불러오는 중...</div>
+        )}
+
+        {/* v0.8.2: 줌이 100% 미만이면 "표시는 작게, 저장은 원본 화질" 안내 */}
+        {img && scale < 0.99 && (
+          <div
+            className="absolute top-3 right-3 bg-black/75 text-white text-[11px] px-3 py-1.5 rounded-md shadow pointer-events-none flex items-center gap-1.5"
+            style={{ zIndex: 400 }}
+          >
+            <span>📐</span>
+            <span>
+              현재 <b className="font-mono">{Math.round(scale * 100)}%</b>로 축소 표시 · 저장은
+              원본 화질
+            </span>
+          </div>
         )}
 
         {/* v0.7.2: 자르기 적용/취소 버튼 (드래그 끝나면 등장) */}
