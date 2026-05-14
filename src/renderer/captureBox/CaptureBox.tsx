@@ -357,19 +357,119 @@ export function CaptureBox(): JSX.Element {
         </button>
       </div>
 
-      {/* 박스 본문: 투명 + 파란 점선 테두리 */}
+      {/* 박스 본문: 투명 + 파란 점선 테두리 + v0.8.3 드래그/더블클릭 기능 */}
       <div
-        style={{
-          flex: 1,
-          position: 'relative',
-          // 매우 옅은 dim — Windows에서 mouse event 받기 위해 alpha 약간 필요
-          background: 'rgba(0,0,0,0.003)',
-          border: '1.5px dashed #3B82F6',
-          borderTop: 'none',
-          borderBottomLeftRadius: 10,
-          borderBottomRightRadius: 10
-        }}
-      />
+        onDoubleClick={onShoot}
+        style={
+          {
+            flex: 1,
+            position: 'relative',
+            // v0.8.3: 본문 어디든 클릭+드래그로 박스 이동
+            WebkitAppRegion: 'drag',
+            // 매우 옅은 dim — Windows에서 mouse event 받기 위해 alpha 약간 필요
+            background: 'rgba(0,0,0,0.003)',
+            border: '1.5px dashed #3B82F6',
+            borderTop: 'none',
+            borderBottomLeftRadius: 10,
+            borderBottomRightRadius: 10
+          } as React.CSSProperties
+        }
+      >
+        {/* 우하단 리사이즈 핸들 — JS 기반 (WebkitAppRegion drag 영역 안에서 작동) */}
+        <ResizeHandle currentSize={size} setSize={setSize} />
+        {/* 안내 힌트 */}
+        <div
+          style={
+            {
+              position: 'absolute',
+              left: '50%',
+              top: '50%',
+              transform: 'translate(-50%, -50%)',
+              color: 'rgba(59,130,246,0.55)',
+              fontSize: 11,
+              fontWeight: 500,
+              fontFamily:
+                '-apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", sans-serif',
+              pointerEvents: 'none',
+              userSelect: 'none',
+              whiteSpace: 'nowrap'
+            } as React.CSSProperties
+          }
+        >
+          드래그=이동 · 더블클릭=캡처 · ⌟ 끌어서 크기 조절
+        </div>
+      </div>
     </div>
+  )
+}
+
+/**
+ * v0.8.3: 우하단 리사이즈 핸들
+ * - WebkitAppRegion: 'no-drag' 로 드래그 영역에서 제외
+ * - mousedown 시 document에 mousemove/mouseup 리스너 등록
+ * - resize 이벤트는 main에 IPC 전송으로 실시간 반영
+ */
+function ResizeHandle(props: {
+  currentSize: { width: number; height: number }
+  setSize: (s: { width: number; height: number }) => void
+}): JSX.Element {
+  const onMouseDown = (e: React.MouseEvent): void => {
+    e.preventDefault()
+    e.stopPropagation()
+    const startX = e.clientX
+    const startY = e.clientY
+    const startW = props.currentSize.width
+    const startH = props.currentSize.height
+
+    let rafId = 0
+    let pendingW = startW
+    let pendingH = startH
+    const flush = (): void => {
+      props.setSize({ width: pendingW, height: pendingH })
+      window.captureBox.resize(pendingW, pendingH)
+      rafId = 0
+    }
+
+    const onMove = (ev: MouseEvent): void => {
+      const dx = ev.clientX - startX
+      const dy = ev.clientY - startY
+      pendingW = Math.max(100, Math.round(startW + dx))
+      pendingH = Math.max(100, Math.round(startH + dy))
+      if (!rafId) rafId = requestAnimationFrame(flush)
+    }
+
+    const onUp = (): void => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+      if (rafId) {
+        cancelAnimationFrame(rafId)
+        flush()
+      }
+    }
+
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }
+
+  return (
+    <div
+      onMouseDown={onMouseDown}
+      title="드래그해서 크기 조절"
+      style={
+        {
+          position: 'absolute',
+          right: 0,
+          bottom: 0,
+          width: 20,
+          height: 20,
+          cursor: 'nwse-resize',
+          WebkitAppRegion: 'no-drag',
+          // 우하단 모서리 삼각형 인디케이터
+          background:
+            'linear-gradient(135deg, transparent 0%, transparent 55%, rgba(59,130,246,0.8) 55%, rgba(59,130,246,0.8) 100%)',
+          borderBottomRightRadius: 9
+        } as React.CSSProperties
+      }
+    />
   )
 }
