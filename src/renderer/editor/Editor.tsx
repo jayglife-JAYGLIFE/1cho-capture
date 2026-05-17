@@ -661,9 +661,32 @@ export function Editor(): JSX.Element {
                     : 'crosshair'
             }}
           >
-            {/* v0.8.2: imageSmoothingEnabled=false 로 픽셀 sharp 렌더링
-                줌인 시 흐려보임 방지 (저장은 어차피 원본 픽셀 그대로) */}
-            <Layer listening={false} imageSmoothingEnabled={false}>
+            {/* v0.8.4: zoom에 따라 동적 smoothing
+                - 축소 (< 100%): smoothing=true → 부드러운 bilinear 다운샘플
+                  (false면 픽셀 drop으로 jagged 깨진 모양 — 화질 떨어져 보임)
+                - 확대 (≥ 100%): smoothing=false → 픽셀 sharp (저장 화질과 동일)
+                Layer ref 로 imageSmoothingQuality='high' 도 설정 (다운샘플 품질 ↑) */}
+            <Layer
+              listening={false}
+              imageSmoothingEnabled={scale < 1}
+              ref={(layer) => {
+                if (!layer) return
+                try {
+                  // Konva.Layer.getCanvas().getContext() 는 Konva wrapper.
+                  // 내부 _context 가 native CanvasRenderingContext2D.
+                  const native = (
+                    layer.getCanvas().getContext() as unknown as {
+                      _context?: CanvasRenderingContext2D
+                    }
+                  )._context
+                  if (native) {
+                    native.imageSmoothingQuality = 'high'
+                  }
+                } catch {
+                  /* ignore — quality 적용 실패해도 표시는 정상 */
+                }
+              }}
+            >
               <KImage image={img} />
             </Layer>
             {/* Mosaic layer: clipped mosaic canvas shown only under mosaic shapes */}
