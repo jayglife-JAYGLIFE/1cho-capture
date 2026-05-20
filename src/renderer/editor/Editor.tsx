@@ -140,12 +140,14 @@ export function Editor(): JSX.Element {
   }, [])
 
   // 자동 fit 계산
+  // v0.8.7: 상한 1 → 4. 작은 이미지도 컨테이너에 꽉 차게 자동 확대.
+  // 너무 작은 이미지(예: 100×100) 도 16x 처럼 막 키우진 않게 4x 캡.
   const computeFitZoom = useCallback((): number => {
     if (!img) return 1
     const pad = 40
     const maxW = Math.max(100, containerSize.width - pad)
     const maxH = Math.max(100, containerSize.height - pad)
-    return Math.min(maxW / img.width, maxH / img.height, 1)
+    return Math.min(maxW / img.width, maxH / img.height, 4)
   }, [img, containerSize])
 
   const applyFit = useCallback((): void => {
@@ -661,14 +663,14 @@ export function Editor(): JSX.Element {
                     : 'crosshair'
             }}
           >
-            {/* v0.8.4: zoom에 따라 동적 smoothing
-                - 축소 (< 100%): smoothing=true → 부드러운 bilinear 다운샘플
-                  (false면 픽셀 drop으로 jagged 깨진 모양 — 화질 떨어져 보임)
-                - 확대 (≥ 100%): smoothing=false → 픽셀 sharp (저장 화질과 동일)
-                Layer ref 로 imageSmoothingQuality='high' 도 설정 (다운샘플 품질 ↑) */}
+            {/* v0.8.7: smoothing 임계점 1 → 2
+                - scale < 2: smoothing=true → 자동 fit 확대(작은 이미지) 시
+                  텍스트 부드럽게. 축소 시도 부드러운 다운샘플.
+                - scale ≥ 2: smoothing=false → 강한 줌인 시 픽셀 sharp
+                Layer ref 로 imageSmoothingQuality='high' 도 설정 (보간 품질 ↑) */}
             <Layer
               listening={false}
-              imageSmoothingEnabled={scale < 1}
+              imageSmoothingEnabled={scale < 2}
               ref={(layer) => {
                 if (!layer) return
                 try {
@@ -770,16 +772,16 @@ export function Editor(): JSX.Element {
           <div className="text-gray-400">이미지 불러오는 중...</div>
         )}
 
-        {/* v0.8.2: 줌이 100% 미만이면 "표시는 작게, 저장은 원본 화질" 안내 */}
-        {img && scale < 0.99 && (
+        {/* v0.8.2/v0.8.7: 표시 줌이 100% 외일 때 안내 — 저장은 항상 원본 화질 */}
+        {img && (scale < 0.99 || scale > 1.05) && (
           <div
             className="absolute top-3 right-3 bg-black/75 text-white text-[11px] px-3 py-1.5 rounded-md shadow pointer-events-none flex items-center gap-1.5"
             style={{ zIndex: 400 }}
           >
             <span>📐</span>
             <span>
-              현재 <b className="font-mono">{Math.round(scale * 100)}%</b>로 축소 표시 · 저장은
-              원본 화질
+              현재 <b className="font-mono">{Math.round(scale * 100)}%</b>
+              {scale < 1 ? '로 축소' : '로 확대'} 표시 · 저장은 원본 화질
             </span>
           </div>
         )}
