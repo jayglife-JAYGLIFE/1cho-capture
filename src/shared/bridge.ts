@@ -92,4 +92,8 @@ export interface CaptureBoxBridge {
   getPresets: () => Promise<CaptureBoxPreset[]>
   /** 프리셋 저장 (전체 배열 교체) */
   setPresets: (presets: CaptureBoxPreset[]) => Promise<void>
+  /** v0.8.5: JS 기반 창 이동 (WebkitAppRegion drag는 dblclick과 충돌함) */
+  startDrag: (mouseScreenX: number, mouseScreenY: number) => Promise<void>
+  dragMove: (mouseScreenX: number, mouseScreenY: number) => Promise<void>
+  dragEnd: () => Promise<void>
 }

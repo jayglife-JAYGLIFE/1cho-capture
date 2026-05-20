@@ -85,5 +85,9 @@ export const IPC = {
   CAPTURE_BOX_RESIZE: 'captureBox:resize',
   CAPTURE_BOX_GET_PRESETS: 'captureBox:getPresets',
   CAPTURE_BOX_SET_PRESETS: 'captureBox:setPresets',
-  CAPTURE_BOX_SIZE_CHANGED: 'captureBox:sizeChanged'
+  CAPTURE_BOX_SIZE_CHANGED: 'captureBox:sizeChanged',
+  // v0.8.5: JS 기반 드래그
+  CAPTURE_BOX_START_DRAG: 'captureBox:startDrag',
+  CAPTURE_BOX_DRAG_MOVE: 'captureBox:dragMove',
+  CAPTURE_BOX_DRAG_END: 'captureBox:dragEnd'
 } as const

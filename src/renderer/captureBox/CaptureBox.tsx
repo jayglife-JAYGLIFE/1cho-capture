@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { CaptureBoxBridge, CaptureBoxInitData } from '../../shared/bridge'
 import type { CaptureBoxPreset } from '../../shared/types'
 
@@ -357,25 +357,11 @@ export function CaptureBox(): JSX.Element {
         </button>
       </div>
 
-      {/* 박스 본문: 투명 + 파란 점선 테두리 + v0.8.3 드래그/더블클릭 기능 */}
-      <div
-        onDoubleClick={onShoot}
-        style={
-          {
-            flex: 1,
-            position: 'relative',
-            // v0.8.3: 본문 어디든 클릭+드래그로 박스 이동
-            WebkitAppRegion: 'drag',
-            // 매우 옅은 dim — Windows에서 mouse event 받기 위해 alpha 약간 필요
-            background: 'rgba(0,0,0,0.003)',
-            border: '1.5px dashed #3B82F6',
-            borderTop: 'none',
-            borderBottomLeftRadius: 10,
-            borderBottomRightRadius: 10
-          } as React.CSSProperties
-        }
-      >
-        {/* 우하단 리사이즈 핸들 — JS 기반 (WebkitAppRegion drag 영역 안에서 작동) */}
+      {/* 박스 본문: 투명 + 파란 점선 테두리
+          v0.8.5: WebkitAppRegion drag 제거. JS 기반 드래그 + 더블클릭 감지.
+          (WebkitAppRegion drag는 dblclick과 충돌해서 더블클릭이 안 먹혔음) */}
+      <BoxBody onShoot={onShoot}>
+        {/* 우하단 리사이즈 핸들 */}
         <ResizeHandle currentSize={size} setSize={setSize} />
         {/* 안내 힌트 */}
         <div
@@ -398,7 +384,84 @@ export function CaptureBox(): JSX.Element {
         >
           드래그=이동 · 더블클릭=캡처 · ⌟ 끌어서 크기 조절
         </div>
-      </div>
+      </BoxBody>
+    </div>
+  )
+}
+
+/**
+ * v0.8.5: 박스 본문 — JS 기반 창 이동 + 시간 기반 더블클릭 감지
+ * - mousedown 시 직전 mousedown과 350ms 이내면 더블클릭으로 판정 → onShoot
+ * - 단일 mousedown이면 window 드래그 시작 (IPC로 main이 setPosition 호출)
+ * - document mousemove/mouseup으로 드래그 추적
+ */
+function BoxBody(props: {
+  onShoot: () => void
+  children?: React.ReactNode
+}): JSX.Element {
+  const lastDownTimeRef = useRef(0)
+
+  const onMouseDown = (e: React.MouseEvent): void => {
+    // 리사이즈 핸들 같은 자식 요소가 stopPropagation 했으면 여긴 안 옴
+    if (e.button !== 0) return // 왼쪽 버튼만 처리
+
+    const now = Date.now()
+    if (now - lastDownTimeRef.current < 350) {
+      // 더블클릭 → 캡처
+      lastDownTimeRef.current = 0
+      props.onShoot()
+      return
+    }
+    lastDownTimeRef.current = now
+
+    // 단일 클릭 → 창 이동 시작
+    e.preventDefault()
+    window.captureBox.startDrag(e.screenX, e.screenY)
+
+    let rafId = 0
+    let pendingX = e.screenX
+    let pendingY = e.screenY
+
+    const flush = (): void => {
+      window.captureBox.dragMove(pendingX, pendingY)
+      rafId = 0
+    }
+
+    const onMove = (ev: MouseEvent): void => {
+      pendingX = ev.screenX
+      pendingY = ev.screenY
+      if (!rafId) rafId = requestAnimationFrame(flush)
+    }
+
+    const onUp = (): void => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+      if (rafId) {
+        cancelAnimationFrame(rafId)
+        flush()
+      }
+      window.captureBox.dragEnd()
+    }
+
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }
+
+  return (
+    <div
+      onMouseDown={onMouseDown}
+      style={{
+        flex: 1,
+        position: 'relative',
+        background: 'rgba(0,0,0,0.003)',
+        border: '1.5px dashed #3B82F6',
+        borderTop: 'none',
+        borderBottomLeftRadius: 10,
+        borderBottomRightRadius: 10,
+        cursor: 'move'
+      }}
+    >
+      {props.children}
     </div>
   )
 }

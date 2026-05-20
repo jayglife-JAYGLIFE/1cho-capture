@@ -32,15 +32,39 @@ function defaultBounds(): {
   width: number
   height: number
 } {
+  const settings = getSettings()
+  const last = settings.captureBox?.lastSize ?? { width: 800, height: 600 }
+  const lastPos = settings.captureBox?.lastPosition
+  const totalH = last.height + CONTROL_BAR_HEIGHT
+
+  // v0.8.5: 마지막 위치 우선 사용. off-screen 이면 fallback.
+  if (lastPos) {
+    const displays = screen.getAllDisplays()
+    const visibleEnough = displays.some((d) => {
+      const xOverlap = Math.max(
+        0,
+        Math.min(lastPos.x + last.width, d.bounds.x + d.bounds.width) -
+          Math.max(lastPos.x, d.bounds.x)
+      )
+      const yOverlap = Math.max(
+        0,
+        Math.min(lastPos.y + totalH, d.bounds.y + d.bounds.height) -
+          Math.max(lastPos.y, d.bounds.y)
+      )
+      // 최소 200×200 픽셀이 어떤 디스플레이 안에 보이면 OK
+      return xOverlap >= 200 && yOverlap >= 200
+    })
+    if (visibleEnough) {
+      return { x: lastPos.x, y: lastPos.y, width: last.width, height: totalH }
+    }
+  }
+
+  // fallback: 사용자 마우스 모니터 중앙 부근
   const cursor = screen.getCursorScreenPoint()
   const display = screen.getDisplayNearestPoint(cursor)
   const { workArea } = display
-  const settings = getSettings()
-  const last = settings.captureBox?.lastSize ?? { width: 800, height: 600 }
-  // 컨트롤바 높이를 더해서 실제 창 높이는 box height + 컨트롤바
   const w = Math.min(last.width, workArea.width)
-  const h = Math.min(last.height + CONTROL_BAR_HEIGHT, workArea.height)
-  // 사용자 모니터 중앙 부근에 배치
+  const h = Math.min(totalH, workArea.height)
   const x = workArea.x + Math.round((workArea.width - w) / 2)
   const y = workArea.y + Math.round((workArea.height - h) / 2)
   return { x, y, width: w, height: h }
@@ -117,6 +141,24 @@ export function openCaptureBox(): void {
     }, 200)
   })
 
+  // v0.8.5: 사용자가 박스 이동 시 마지막 위치 저장 (debounce 300ms)
+  let moveTimer: NodeJS.Timeout | null = null
+  win.on('move', () => {
+    if (!win || win.isDestroyed()) return
+    if (moveTimer) clearTimeout(moveTimer)
+    moveTimer = setTimeout(() => {
+      if (!win || win.isDestroyed()) return
+      const [x, y] = win.getPosition()
+      const settings = getSettings()
+      setSettings({
+        captureBox: {
+          ...settings.captureBox,
+          lastPosition: { x, y }
+        }
+      })
+    }, 300)
+  })
+
   win.webContents.once('did-finish-load', () => {
     ready = true
     sendInit()
@@ -150,9 +192,48 @@ function sendInit(): void {
 }
 
 export function closeCaptureBox(): void {
-  if (win && !win.isDestroyed()) win.destroy()
+  if (win && !win.isDestroyed()) {
+    // 닫기 직전 현재 위치 한 번 더 저장 (debounce 떄문에 누락 방지)
+    try {
+      const [x, y] = win.getPosition()
+      const settings = getSettings()
+      setSettings({
+        captureBox: {
+          ...settings.captureBox,
+          lastPosition: { x, y }
+        }
+      })
+    } catch {
+      /* ignore */
+    }
+    win.destroy()
+  }
   win = null
   ready = false
+}
+
+// v0.8.5: JS 기반 창 드래그 — WebkitAppRegion drag 가 dblclick과 충돌해서
+// renderer에서 mouse 이벤트를 받아 직접 win.setPosition() 호출.
+let dragStartMouse: { x: number; y: number } | null = null
+let dragStartBounds: { x: number; y: number } | null = null
+
+export function captureBoxStartDrag(mouseX: number, mouseY: number): void {
+  if (!win || win.isDestroyed()) return
+  const b = win.getBounds()
+  dragStartBounds = { x: b.x, y: b.y }
+  dragStartMouse = { x: mouseX, y: mouseY }
+}
+
+export function captureBoxDragMove(mouseX: number, mouseY: number): void {
+  if (!win || win.isDestroyed() || !dragStartBounds || !dragStartMouse) return
+  const dx = mouseX - dragStartMouse.x
+  const dy = mouseY - dragStartMouse.y
+  win.setPosition(dragStartBounds.x + dx, dragStartBounds.y + dy)
+}
+
+export function captureBoxDragEnd(): void {
+  dragStartMouse = null
+  dragStartBounds = null
 }
 
 export function resizeCaptureBox(width: number, height: number): void {

@@ -198,9 +198,11 @@ function showOverlayEntry(entry: OverlayEntry, display: Display): void {
     scaleFactor: display.scaleFactor
   })
 
-  // 4. show
+  // 4. show — v0.8.5: focus() 제거. 오버레이가 포커스를 가져가면 다른 앱의
+  // 펼쳐진 메뉴/드롭다운/시작메뉴 등이 자동으로 닫혀버려서 그 상태를 캡처
+  // 못 하던 문제. showInactive 만 호출해서 등장 시점엔 포커스 변경 없음.
+  // 키보드 입력(ESC)은 v0.7.7 의 globalShortcut.register('Escape')으로 처리.
   entry.window.showInactive()
-  entry.window.focus()
 
   // 5. 적용된 bounds 검증 — Windows 작업표시줄 등에 의해 클리핑됐는지 체크
   try {

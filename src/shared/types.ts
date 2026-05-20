@@ -33,6 +33,8 @@ export interface CaptureBoxPreset {
 export interface CaptureBoxSettings {
   /** 마지막 사용한 박스 크기 (다음 호출 시 자동 복원) */
   lastSize: { width: number; height: number }
+  /** v0.8.5: 마지막 사용한 박스 위치 (다음 호출 시 그 위치로 복원, off-screen 이면 fallback) */
+  lastPosition?: { x: number; y: number }
   /** 사용자 정의 프리셋 목록 */
   presets: CaptureBoxPreset[]
 }

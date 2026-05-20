@@ -17,7 +17,12 @@ const bridge: CaptureBoxBridge = {
   resize: (width, height) => ipcRenderer.invoke(IPC.CAPTURE_BOX_RESIZE, { width, height }),
   getPresets: () => ipcRenderer.invoke(IPC.CAPTURE_BOX_GET_PRESETS),
   setPresets: (presets: CaptureBoxPreset[]) =>
-    ipcRenderer.invoke(IPC.CAPTURE_BOX_SET_PRESETS, presets)
+    ipcRenderer.invoke(IPC.CAPTURE_BOX_SET_PRESETS, presets),
+  startDrag: (mouseScreenX, mouseScreenY) =>
+    ipcRenderer.invoke(IPC.CAPTURE_BOX_START_DRAG, { x: mouseScreenX, y: mouseScreenY }),
+  dragMove: (mouseScreenX, mouseScreenY) =>
+    ipcRenderer.invoke(IPC.CAPTURE_BOX_DRAG_MOVE, { x: mouseScreenX, y: mouseScreenY }),
+  dragEnd: () => ipcRenderer.invoke(IPC.CAPTURE_BOX_DRAG_END)
 }
 
 contextBridge.exposeInMainWorld('captureBox', bridge)

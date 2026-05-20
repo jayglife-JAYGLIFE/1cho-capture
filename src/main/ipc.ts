@@ -22,7 +22,10 @@ import {
   openCaptureBox,
   closeCaptureBox,
   resizeCaptureBox,
-  shootCaptureBox
+  shootCaptureBox,
+  captureBoxStartDrag,
+  captureBoxDragMove,
+  captureBoxDragEnd
 } from './windows/captureBox'
 import {
   startScrollCapture,
@@ -267,6 +270,17 @@ export function registerIpcHandlers(): void {
       })
     }
   )
+
+  // v0.8.5: JS 기반 창 드래그
+  ipcMain.handle(IPC.CAPTURE_BOX_START_DRAG, (_, payload: { x: number; y: number }) => {
+    captureBoxStartDrag(payload.x, payload.y)
+  })
+  ipcMain.handle(IPC.CAPTURE_BOX_DRAG_MOVE, (_, payload: { x: number; y: number }) => {
+    captureBoxDragMove(payload.x, payload.y)
+  })
+  ipcMain.handle(IPC.CAPTURE_BOX_DRAG_END, () => {
+    captureBoxDragEnd()
+  })
 
   // ---------- Scroll capture ----------
   ipcMain.handle(IPC.CAPTURE_SCROLL, () => startScrollCapture())
