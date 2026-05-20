@@ -3,7 +3,11 @@ import type { HotkeyConfig } from '../shared/types'
 import { captureFullScreen } from './capture'
 import { openEditorWithImage, getLastCapture } from './windows/editor'
 import { openRegionOverlay } from './windows/overlay'
-import { openCaptureBox } from './windows/captureBox'
+import {
+  openCaptureBox,
+  isCaptureBoxOpen,
+  shootCaptureBox
+} from './windows/captureBox'
 import { startScrollCapture } from './capture/scroll'
 
 /**
@@ -29,8 +33,14 @@ export function registerHotkeys(cfg: HotkeyConfig): RegisterResult {
     await openEditorWithImage(r)
   })
   tryRegister(cfg.window, () => {
-    // v0.8.0: 리사이즈 가능한 박스 모드로 창 캡처 구현
-    openCaptureBox()
+    // v0.8.6: 토글 동작
+    // - 박스 안 떠있을 때: 박스 열기 (마지막 위치/크기 복원)
+    // - 박스 떠있을 때: 그 영역을 캡처 (박스 클릭 안 하므로 펼쳐진 메뉴 유지됨)
+    if (isCaptureBoxOpen()) {
+      shootCaptureBox()
+    } else {
+      openCaptureBox()
+    }
   })
   tryRegister(cfg.scroll, () => startScrollCapture())
   tryRegister(cfg.repeat, async () => {

@@ -23,6 +23,7 @@ import {
   closeCaptureBox,
   resizeCaptureBox,
   shootCaptureBox,
+  isCaptureBoxOpen,
   captureBoxStartDrag,
   captureBoxDragMove,
   captureBoxDragEnd
@@ -299,9 +300,9 @@ export function registerIpcHandlers(): void {
       if (mode === 'region') {
         await openRegionOverlay()
       } else if (mode === 'window') {
-        // v0.8.0: 창 캡처는 리사이즈 가능한 박스 모드
-        openCaptureBox()
-        // 박스가 떠있는 동안 툴바도 보이는 게 자연스러움 → 즉시 복원
+        // v0.8.6: 박스 떠있으면 그 영역 캡처 (메뉴 유지), 아니면 열기
+        if (isCaptureBoxOpen()) shootCaptureBox()
+        else openCaptureBox()
         restoreToolbarAfterCapture()
       } else if (mode === 'fullscreen') {
         const r = await captureFullScreen()

@@ -73,8 +73,8 @@ function defaultBounds(): {
 export function openCaptureBox(): void {
   if (win && !win.isDestroyed()) {
     sendInit()
-    win.show()
-    win.focus()
+    // v0.8.6: showInactive + focus() 제거 → 다른 앱의 펼쳐진 메뉴 유지
+    win.showInactive()
     return
   }
 
@@ -163,8 +163,8 @@ export function openCaptureBox(): void {
     ready = true
     sendInit()
     if (win && !win.isDestroyed()) {
-      win.show()
-      win.focus()
+      // v0.8.6: showInactive + focus 제거 → 등장 시점에 다른 앱 포커스 유지
+      win.showInactive()
     }
   })
 
@@ -234,6 +234,11 @@ export function captureBoxDragMove(mouseX: number, mouseY: number): void {
 export function captureBoxDragEnd(): void {
   dragStartMouse = null
   dragStartBounds = null
+}
+
+/** v0.8.6: 박스 떠있는지 확인 — 단축키 토글에 사용 */
+export function isCaptureBoxOpen(): boolean {
+  return !!(win && !win.isDestroyed() && win.isVisible())
 }
 
 export function resizeCaptureBox(width: number, height: number): void {

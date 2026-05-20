@@ -382,7 +382,11 @@ export function CaptureBox(): JSX.Element {
             } as React.CSSProperties
           }
         >
-          드래그=이동 · 더블클릭=캡처 · ⌟ 끌어서 크기 조절
+          드래그=이동 · 더블클릭=캡처 · ⌟ 크기 조절
+          <br />
+          <span style={{ color: 'rgba(34,197,94,0.75)', fontSize: 10 }}>
+            ⭐ 단축키(Ctrl+Shift+X) 다시 누름 = 메뉴 유지 캡처
+          </span>
         </div>
       </BoxBody>
     </div>
