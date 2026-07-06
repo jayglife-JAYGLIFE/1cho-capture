@@ -31,6 +31,9 @@ export function CaptureBox(): JSX.Element {
   const [editingSize, setEditingSize] = useState(false)
   const [draftW, setDraftW] = useState('')
   const [draftH, setDraftH] = useState('')
+  // v0.8.8: 지연 캡처 카운트다운 (null = 비활성)
+  const [countdown, setCountdown] = useState<number | null>(null)
+  const DELAY_SECONDS = 3
 
   useEffect(() => {
     window.captureBox.onInit((data: CaptureBoxInitData) => {
@@ -71,24 +74,45 @@ export function CaptureBox(): JSX.Element {
     window.captureBox.shoot()
   }
 
+  // v0.8.8: 지연 캡처 — 카운트다운 동안 메뉴를 펼쳐놓을 수 있어서
+  // 팝업 메뉴/드롭다운이 닫히지 않고 캡처됨 (클릭이 카운트다운 시작 시 한 번뿐)
+  const startDelayCapture = (): void => {
+    if (countdown !== null) return // 이미 진행 중
+    setCountdown(DELAY_SECONDS)
+  }
+
+  useEffect(() => {
+    if (countdown === null) return
+    if (countdown <= 0) {
+      setCountdown(null)
+      window.captureBox.shoot()
+      return
+    }
+    const timer = setTimeout(() => {
+      setCountdown((c) => (c === null ? null : c - 1))
+    }, 1000)
+    return () => clearTimeout(timer)
+  }, [countdown])
+
   const onClose = (): void => {
     window.captureBox.close()
   }
 
-  // ESC = 닫기, Enter = 캡처
+  // ESC = 닫기/취소, Enter = 캡처
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') {
-        if (presetOpen) setPresetOpen(false)
+        if (countdown !== null) setCountdown(null) // 카운트다운 취소
+        else if (presetOpen) setPresetOpen(false)
         else if (editingSize) setEditingSize(false)
         else onClose()
-      } else if (e.key === 'Enter' && !editingSize) {
+      } else if (e.key === 'Enter' && !editingSize && countdown === null) {
         onShoot()
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [presetOpen, editingSize])
+  }, [presetOpen, editingSize, countdown])
 
   return (
     <div
@@ -144,6 +168,27 @@ export function CaptureBox(): JSX.Element {
           }
         >
           📷 캡처
+        </button>
+
+        {/* v0.8.8: 지연 캡처 버튼 — 펼친 메뉴 캡처용 */}
+        <button
+          onClick={startDelayCapture}
+          title="3초 후 캡처 — 그동안 메뉴를 펼쳐놓으면 닫히지 않고 캡처됩니다"
+          style={
+            {
+              WebkitAppRegion: 'no-drag',
+              padding: '5px 10px',
+              background: countdown !== null ? '#22C55E' : 'rgba(255,255,255,0.08)',
+              border: 'none',
+              borderRadius: 6,
+              color: countdown !== null ? 'white' : '#E5E7EB',
+              cursor: 'pointer',
+              fontSize: 12,
+              fontWeight: countdown !== null ? 700 : 500
+            } as React.CSSProperties
+          }
+        >
+          {countdown !== null ? `⏱ ${countdown}` : '⏱ 3초'}
         </button>
 
         {/* 사이즈 표시/입력 */}
@@ -363,31 +408,54 @@ export function CaptureBox(): JSX.Element {
       <BoxBody onShoot={onShoot}>
         {/* 우하단 리사이즈 핸들 */}
         <ResizeHandle currentSize={size} setSize={setSize} />
-        {/* 안내 힌트 */}
-        <div
-          style={
-            {
-              position: 'absolute',
-              left: '50%',
-              top: '50%',
-              transform: 'translate(-50%, -50%)',
-              color: 'rgba(59,130,246,0.55)',
-              fontSize: 11,
-              fontWeight: 500,
-              fontFamily:
-                '-apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", sans-serif',
-              pointerEvents: 'none',
-              userSelect: 'none',
-              whiteSpace: 'nowrap'
-            } as React.CSSProperties
-          }
-        >
-          드래그=이동 · 더블클릭=캡처 · ⌟ 크기 조절
-          <br />
-          <span style={{ color: 'rgba(34,197,94,0.75)', fontSize: 10 }}>
-            ⭐ 단축키(Ctrl+Shift+X) 다시 누름 = 메뉴 유지 캡처
-          </span>
-        </div>
+        {/* v0.8.8: 카운트다운 중이면 큰 숫자, 아니면 안내 힌트 */}
+        {countdown !== null ? (
+          <div
+            style={
+              {
+                position: 'absolute',
+                left: '50%',
+                top: '50%',
+                transform: 'translate(-50%, -50%)',
+                color: 'rgba(34,197,94,0.95)',
+                fontSize: 96,
+                fontWeight: 800,
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                pointerEvents: 'none',
+                userSelect: 'none',
+                textShadow: '0 2px 12px rgba(0,0,0,0.6)'
+              } as React.CSSProperties
+            }
+          >
+            {countdown}
+          </div>
+        ) : (
+          <div
+            style={
+              {
+                position: 'absolute',
+                left: '50%',
+                top: '50%',
+                transform: 'translate(-50%, -50%)',
+                color: 'rgba(59,130,246,0.55)',
+                fontSize: 11,
+                fontWeight: 500,
+                fontFamily:
+                  '-apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", sans-serif',
+                pointerEvents: 'none',
+                userSelect: 'none',
+                textAlign: 'center',
+                lineHeight: 1.7
+              } as React.CSSProperties
+            }
+          >
+            드래그=이동 · 더블클릭=캡처 · ⌟ 크기 조절
+            <br />
+            <span style={{ color: 'rgba(34,197,94,0.8)', fontSize: 10 }}>
+              ⏱ 3초 버튼 = 메뉴 펼쳐놓고 캡처 (메뉴 안 닫힘)
+            </span>
+          </div>
+        )}
       </BoxBody>
     </div>
   )

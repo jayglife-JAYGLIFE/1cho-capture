@@ -23,7 +23,8 @@ export default defineConfig({
           settings: resolve(__dirname, 'src/preload/settings.ts'),
           toolbar: resolve(__dirname, 'src/preload/toolbar.ts'),
           scrollController: resolve(__dirname, 'src/preload/scrollController.ts'),
-          captureBox: resolve(__dirname, 'src/preload/captureBox.ts')
+          captureBox: resolve(__dirname, 'src/preload/captureBox.ts'),
+          delayBadge: resolve(__dirname, 'src/preload/delayBadge.ts')
         }
       }
     }
@@ -44,7 +45,8 @@ export default defineConfig({
           settings: resolve(__dirname, 'src/renderer/settings/index.html'),
           toolbar: resolve(__dirname, 'src/renderer/toolbar/index.html'),
           scrollController: resolve(__dirname, 'src/renderer/scrollController/index.html'),
-          captureBox: resolve(__dirname, 'src/renderer/captureBox/index.html')
+          captureBox: resolve(__dirname, 'src/renderer/captureBox/index.html'),
+          delayBadge: resolve(__dirname, 'src/renderer/delayBadge/index.html')
         }
       }
     }

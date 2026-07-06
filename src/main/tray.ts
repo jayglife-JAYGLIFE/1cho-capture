@@ -3,6 +3,7 @@ import { Tray, Menu, MenuItemConstructorOptions, nativeImage, app } from 'electr
 import path from 'node:path'
 import { openRegionOverlay } from './windows/overlay'
 import { openCaptureBox, isCaptureBoxOpen, shootCaptureBox } from './windows/captureBox'
+import { startDelayFullScreenCapture } from './windows/delayBadge'
 import { captureFullScreen } from './capture'
 import { openEditorWithImage } from './windows/editor'
 import { openSettingsWindow } from './windows/settings'
@@ -107,6 +108,25 @@ export function rebuildMenu(): void {
       label: '스크롤 캡처',
       accelerator: 'Ctrl+Shift+V',
       click: () => startScrollCapture()
+    },
+    { type: 'separator' },
+    {
+      // v0.8.9: 팝업/드롭다운 유지 캡처의 정석 해법 — 창 안 띄우고 시간만 기다림
+      label: '⏱ 지연 캡처 (팝업 유지)',
+      submenu: [
+        {
+          label: '3초 후 전체화면',
+          click: () => startDelayFullScreenCapture(3)
+        },
+        {
+          label: '5초 후 전체화면',
+          click: () => startDelayFullScreenCapture(5)
+        },
+        {
+          label: '10초 후 전체화면',
+          click: () => startDelayFullScreenCapture(10)
+        }
+      ]
     },
     { type: 'separator' },
     {

@@ -103,10 +103,17 @@ app.on('window-all-closed', () => {
   // Keep app running in background (tray-only)
 })
 
-app.on('before-quit', () => {
+app.on('before-quit', async () => {
   // close preventDefault 걸려있는 창들 종료 전에 명시 해제
   destroyEditorWindow()
   destroyToolbarWindow()
+  // v0.8.9: 지연 배지 정리
+  try {
+    const dm = await import('./windows/delayBadge')
+    dm.destroyDelayBadge()
+  } catch {
+    /* ignore */
+  }
   // v0.6.0: PowerShell 세션 정리
   if (process.platform === 'win32') destroyPowerShell()
 })
