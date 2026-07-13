@@ -11,6 +11,7 @@ interface InitData {
   displayId: number
   bounds: { x: number; y: number; width: number; height: number }
   scaleFactor: number
+  backgroundUrl?: string
 }
 
 interface Point {
@@ -111,6 +112,22 @@ export function Overlay(): JSX.Element {
         background: 'rgba(0,0,0,0.003)'
       }}
     >
+      {init.backgroundUrl && (
+        <img
+          src={init.backgroundUrl}
+          alt=""
+          draggable={false}
+          className="pointer-events-none"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            width: '100%',
+            height: '100%',
+            objectFit: 'fill',
+            userSelect: 'none'
+          }}
+        />
+      )}
       {rect && (
         <div
           className="pointer-events-none"

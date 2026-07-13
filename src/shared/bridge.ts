@@ -6,6 +6,12 @@ export interface OverlayBridge {
       displayId: number
       bounds: { x: number; y: number; width: number; height: number }
       scaleFactor: number
+      /**
+       * v0.9.0: 스냅샷 캡처 모드에서 이 디스플레이의 프리캡처 이미지 URL.
+       * 존재하면 오버레이는 이 이미지를 배경으로 표시하고, 드래그 완료 시엔 이 이미지를
+       * crop 해서 결과를 만든다 (실제 화면은 다시 캡처하지 않음).
+       */
+      backgroundUrl?: string
     }) => void
   ) => void
   submit: (sel: RegionSelection) => Promise<void>

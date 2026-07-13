@@ -1,10 +1,33 @@
-import { BrowserWindow, Display, globalShortcut, powerMonitor, screen } from 'electron'
+import { BrowserWindow, Display, globalShortcut, nativeImage, powerMonitor, screen } from 'electron'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
+import { promises as fs } from 'node:fs'
+import os from 'node:os'
 import { captureRegion } from '../capture'
 import { IPC } from '../../shared/constants'
-import type { RegionSelection } from '../../shared/types'
+import type { CaptureResult, RegionSelection } from '../../shared/types'
 import { openEditorWithImage } from './editor'
 import { hideToolbarForCapture, restoreToolbarAfterCapture } from './toolbar'
+
+/**
+ * v0.9.0 스냅샷 방식으로 전환.
+ *
+ * 단축키 → 오버레이 창 띄우기 *전에* 각 디스플레이 즉시 캡처 → 그 스냅샷을
+ * 오버레이 배경으로 표시 → 드래그 완료 시 스냅샷에서 crop.
+ *
+ * 이렇게 하면 오버레이 활성화(포커스 이동) 로 팝업/드롭다운 메뉴가 닫혀도
+ * 이미 찍힌 스냅샷은 팝업이 열려있던 상태 그대로 유지된다.
+ */
+
+interface SnapshotEntry {
+  filePath: string
+  image: Electron.NativeImage
+  physWidth: number
+  physHeight: number
+  dipWidth: number
+  dipHeight: number
+}
+const snapshots = new Map<number, SnapshotEntry>()
 
 /**
  * v0.3.1 UX 개편: 맥 Cmd+Shift+4 처럼 "라이브 화면" 위에 투명 오버레이만 띄우고,
@@ -191,11 +214,13 @@ function showOverlayEntry(entry: OverlayEntry, display: Display): void {
     console.warn('[overlay] setAlwaysOnTop 실패:', e)
   }
 
-  // 3. init payload 전송
+  // 3. init payload 전송 (v0.9.0: 스냅샷 file:// URL 포함)
+  const snap = snapshots.get(entry.displayId)
   entry.window.webContents.send(IPC.OVERLAY_INIT, {
     displayId: entry.displayId,
     bounds: display.bounds,
-    scaleFactor: display.scaleFactor
+    scaleFactor: display.scaleFactor,
+    backgroundUrl: snap ? pathToFileURL(snap.filePath).href : undefined
   })
 
   // 4. show — v0.8.5: focus() 제거. 오버레이가 포커스를 가져가면 다른 앱의
@@ -264,6 +289,10 @@ export async function openRegionOverlay(): Promise<void> {
 
   isOpen = true
   hideToolbarForCapture()
+
+  // v0.9.0: 오버레이 창 띄우기 *전에* 각 디스플레이 즉시 스냅샷 캡처.
+  // 오버레이 활성화로 팝업이 닫히기 전 상태를 확보하는 게 목적.
+  await capturePerDisplaySnapshots()
 
   try {
     let shownCount = 0
@@ -348,69 +377,104 @@ export function closeAllOverlays(): void {
   }
 }
 
-/** 사용자가 ESC 등으로 선택을 취소한 경우: 툴바 복원 */
+/** 사용자가 ESC 등으로 선택을 취소한 경우: 툴바 복원 + 스냅샷 정리 */
 export function cancelRegionOverlay(): void {
   closeAllOverlays()
+  disposeSnapshots().catch(() => undefined)
   restoreToolbarAfterCapture()
 }
 
 /**
- * 드래그 완료 → 오버레이 숨긴 후 해당 영역만 네이티브 캡처.
- * 오버레이 자체가 스크린샷에 찍히지 않도록 hide 후 짧게 대기 (OS 렌더링 반영).
+ * v0.9.0: 각 디스플레이를 순차 네이티브 캡처해 임시 파일로 저장 + 메모리에 nativeImage 로 보관.
+ *
+ * 왜 순차인가: Mac screencapture / Win 프리워밍된 PowerShell 세션 모두 동시 호출이
+ * 안정적이지 않아 순서대로 실행. 디스플레이 1개 기준 ~150-250ms.
+ * 실패한 디스플레이는 스킵 (해당 오버레이엔 backgroundUrl 없이 뜨고, drop 시 fallback).
+ */
+async function capturePerDisplaySnapshots(): Promise<void> {
+  await disposeSnapshots()
+  for (const d of screen.getAllDisplays()) {
+    try {
+      let x = d.bounds.x
+      let y = d.bounds.y
+      let w = d.bounds.width
+      let h = d.bounds.height
+      if (process.platform === 'win32') {
+        const phys = screen.dipToScreenRect(null, d.bounds)
+        x = phys.x
+        y = phys.y
+        w = phys.width
+        h = phys.height
+      }
+      const res = await captureRegion(x, y, w, h)
+      if (!res.filePath) continue
+      const img = nativeImage.createFromPath(res.filePath)
+      const size = img.getSize()
+      if (size.width <= 0 || size.height <= 0) continue
+      snapshots.set(d.id, {
+        filePath: res.filePath,
+        image: img,
+        physWidth: size.width,
+        physHeight: size.height,
+        dipWidth: d.bounds.width,
+        dipHeight: d.bounds.height
+      })
+    } catch (e) {
+      console.warn('[overlay] display snapshot 실패 displayId=' + d.id, e)
+    }
+  }
+}
+
+async function disposeSnapshots(): Promise<void> {
+  const toRemove = Array.from(snapshots.values())
+  snapshots.clear()
+  await Promise.all(
+    toRemove.map((s) => fs.unlink(s.filePath).catch(() => undefined))
+  )
+}
+
+/**
+ * v0.9.0: 드래그 완료 → 저장된 스냅샷에서 해당 영역 crop.
+ * 실제 화면을 다시 캡처하지 않으므로, 오버레이가 뜨는 사이 팝업이 닫혔어도
+ * 스냅샷은 팝업이 열려있던 상태 그대로 유지됨.
  */
 export async function handleOverlaySelection(selection: RegionSelection): Promise<void> {
   closeAllOverlays()
 
   const display = screen.getAllDisplays().find((d) => d.id === selection.displayId)
   if (!display) {
+    await disposeSnapshots()
     restoreToolbarAfterCapture()
     return
   }
 
-  // 오버레이가 실제 화면에서 사라지기까지 OS 렌더링 반영 대기.
-  // macOS는 보통 16~32ms면 충분, Windows는 DWM 합성 때문에 50~80ms 권장.
-  await new Promise((r) => setTimeout(r, process.platform === 'win32' ? 100 : 60))
-
-  // v0.7.9: Windows 멀티 모니터 + per-monitor DPI 정확 변환.
-  // 이전 v0.7.4 ~ v0.7.8 은 단순히 (display.bounds + selection) * scaleFactor 로
-  // 변환했는데, 두 모니터의 배율이 다른 경우 (예: 메인 150%, 보조 100%)
-  // 보조 모니터의 물리 origin 이 '메인 모니터의 물리 너비'에 의존하기 때문에
-  // 보조 모니터 좌표가 어긋나 일부만 캡처되는 버그가 있었음.
-  // Electron 의 screen.dipToScreenRect 가 Windows 내부적으로 MonitorFromPoint
-  // + GetDpiForMonitor 를 호출해 멀티 모니터/다른 DPI 를 자동 처리해주므로 사용.
-  // Mac screencapture 는 논리 좌표(points)를 받으므로 변환 없이 그대로.
-  let absX: number
-  let absY: number
-  let capW: number
-  let capH: number
-  const dipRect = {
-    x: display.bounds.x + selection.x,
-    y: display.bounds.y + selection.y,
-    width: selection.width,
-    height: selection.height
-  }
-  if (process.platform === 'win32') {
-    const phys = screen.dipToScreenRect(null, dipRect)
-    absX = phys.x
-    absY = phys.y
-    capW = phys.width
-    capH = phys.height
-  } else {
-    absX = dipRect.x
-    absY = dipRect.y
-    capW = dipRect.width
-    capH = dipRect.height
-  }
-
-  // v0.7.0: 스크롤 캡처 모드면 session 시작하고 리턴 (툴바 복원은 완료/취소 시에)
+  // v0.7.0: 스크롤 캡처 모드면 실시간 화면을 스크롤하며 캡처해야 하므로
+  // 스냅샷 방식이 아니라 기존처럼 라이브 좌표계로 넘김.
   try {
     const scrollMod = await import('../capture/scroll')
     if (scrollMod.consumeScrollSelectionFlag()) {
+      let absX = display.bounds.x + selection.x
+      let absY = display.bounds.y + selection.y
+      let capW = selection.width
+      let capH = selection.height
+      if (process.platform === 'win32') {
+        const phys = screen.dipToScreenRect(null, {
+          x: absX,
+          y: absY,
+          width: capW,
+          height: capH
+        })
+        absX = phys.x
+        absY = phys.y
+        capW = phys.width
+        capH = phys.height
+      }
       await scrollMod.beginScrollSession(
         { x: absX, y: absY, width: capW, height: capH },
         display.id,
         display.scaleFactor
       )
+      await disposeSnapshots()
       restoreToolbarAfterCapture()
       return
     }
@@ -419,19 +483,53 @@ export async function handleOverlaySelection(selection: RegionSelection): Promis
   }
 
   try {
-    console.log('[overlay] capturing region:', {
-      absX,
-      absY,
-      w: capW,
-      h: capH,
-      platform: process.platform
-    })
-    const result = await captureRegion(absX, absY, capW, capH)
-    console.log('[overlay] captured →', result.filePath ?? '(no filePath)')
+    const snap = snapshots.get(selection.displayId)
+    let result: CaptureResult
+
+    if (snap) {
+      // 스냅샷에서 crop — DIP 좌표(selection.x/y/w/h)를 물리 픽셀 좌표로 변환.
+      const sfx = snap.physWidth / snap.dipWidth
+      const sfy = snap.physHeight / snap.dipHeight
+      const cropX = Math.max(0, Math.round(selection.x * sfx))
+      const cropY = Math.max(0, Math.round(selection.y * sfy))
+      const cropW = Math.max(1, Math.min(snap.physWidth - cropX, Math.round(selection.width * sfx)))
+      const cropH = Math.max(1, Math.min(snap.physHeight - cropY, Math.round(selection.height * sfy)))
+      const cropped = snap.image.crop({ x: cropX, y: cropY, width: cropW, height: cropH })
+      const buf = cropped.toPNG()
+      const outPath = path.join(
+        os.tmpdir(),
+        `1cho_cap_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.png`
+      )
+      await fs.writeFile(outPath, buf)
+      result = { filePath: outPath, width: cropW, height: cropH }
+      console.log('[overlay] cropped from snapshot →', outPath, cropW, 'x', cropH)
+    } else {
+      // fallback: 스냅샷이 없으면 라이브 캡처 (v0.8.x 방식)
+      console.warn('[overlay] no snapshot for display', selection.displayId, '→ live capture fallback')
+      await new Promise((r) => setTimeout(r, process.platform === 'win32' ? 100 : 60))
+      let absX = display.bounds.x + selection.x
+      let absY = display.bounds.y + selection.y
+      let capW = selection.width
+      let capH = selection.height
+      if (process.platform === 'win32') {
+        const phys = screen.dipToScreenRect(null, {
+          x: absX,
+          y: absY,
+          width: capW,
+          height: capH
+        })
+        absX = phys.x
+        absY = phys.y
+        capW = phys.width
+        capH = phys.height
+      }
+      result = await captureRegion(absX, absY, capW, capH)
+    }
+
     await openEditorWithImage(result)
   } catch (e) {
     const msg = (e as Error)?.message ?? String(e)
-    console.error('[overlay] captureRegion 실패:', msg)
+    console.error('[overlay] selection 처리 실패:', msg)
     try {
       const { Notification } = await import('electron')
       new Notification({
@@ -445,6 +543,7 @@ export async function handleOverlaySelection(selection: RegionSelection): Promis
       /* ignore */
     }
   } finally {
+    await disposeSnapshots()
     restoreToolbarAfterCapture()
   }
 }
