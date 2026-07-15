@@ -3,7 +3,7 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { promises as fs } from 'node:fs'
 import os from 'node:os'
-import { captureRegion } from '../capture'
+import { captureFullScreen, captureRegion } from '../capture'
 import { IPC } from '../../shared/constants'
 import type { CaptureResult, RegionSelection } from '../../shared/types'
 import { openEditorWithImage } from './editor'
@@ -21,9 +21,6 @@ import { hideToolbarForCapture, restoreToolbarAfterCapture } from './toolbar'
 
 interface SnapshotEntry {
   filePath: string
-  image: Electron.NativeImage
-  physWidth: number
-  physHeight: number
   dipWidth: number
   dipHeight: number
 }
@@ -385,44 +382,79 @@ export function cancelRegionOverlay(): void {
 }
 
 /**
- * v0.9.0: 각 디스플레이를 순차 네이티브 캡처해 임시 파일로 저장 + 메모리에 nativeImage 로 보관.
+ * v0.9.1: 스냅샷 캡처 고속화.
  *
- * 왜 순차인가: Mac screencapture / Win 프리워밍된 PowerShell 세션 모두 동시 호출이
- * 안정적이지 않아 순서대로 실행. 디스플레이 1개 기준 ~150-250ms.
- * 실패한 디스플레이는 스킵 (해당 오버레이엔 backgroundUrl 없이 뜨고, drop 시 fallback).
+ * v0.9.0 은 디스플레이마다 순차 캡처 + 즉시 PNG 디코드였는데 (2대 기준 ~500ms+),
+ * - Mac: 디스플레이별 screencapture 를 병렬 실행 (프로세스 독립이라 안전)
+ * - Win: PS 세션이 명령을 직렬 처리하므로, 가상 전체화면을 *1회* 캡처한 뒤
+ *        main 에서 디스플레이별로 crop (PS 왕복 1번, PNG 인코딩 1번)
+ * - PNG 디코드(nativeImage)는 드래그 완료 시점으로 지연 — 오버레이 표시엔
+ *   file:// 경로만 있으면 됨
  */
 async function capturePerDisplaySnapshots(): Promise<void> {
   await disposeSnapshots()
-  for (const d of screen.getAllDisplays()) {
+  const displays = screen.getAllDisplays()
+  const t0 = Date.now()
+
+  if (process.platform === 'win32') {
+    // 가상 전체화면 1회 캡처 → 디스플레이별 crop
     try {
-      let x = d.bounds.x
-      let y = d.bounds.y
-      let w = d.bounds.width
-      let h = d.bounds.height
-      if (process.platform === 'win32') {
-        const phys = screen.dipToScreenRect(null, d.bounds)
-        x = phys.x
-        y = phys.y
-        w = phys.width
-        h = phys.height
-      }
-      const res = await captureRegion(x, y, w, h)
-      if (!res.filePath) continue
-      const img = nativeImage.createFromPath(res.filePath)
+      const full = await captureFullScreen()
+      if (!full.filePath) return
+      const img = nativeImage.createFromPath(full.filePath)
       const size = img.getSize()
-      if (size.width <= 0 || size.height <= 0) continue
-      snapshots.set(d.id, {
-        filePath: res.filePath,
-        image: img,
-        physWidth: size.width,
-        physHeight: size.height,
-        dipWidth: d.bounds.width,
-        dipHeight: d.bounds.height
-      })
+      // 가상 화면 원점 (물리 px) = 모든 디스플레이 물리 bounds 의 최소값
+      const physRects = displays.map((d) => screen.dipToScreenRect(null, d.bounds))
+      const originX = Math.min(...physRects.map((r) => r.x))
+      const originY = Math.min(...physRects.map((r) => r.y))
+      await Promise.all(
+        displays.map(async (d, i) => {
+          try {
+            const r = physRects[i]
+            const cropX = Math.max(0, r.x - originX)
+            const cropY = Math.max(0, r.y - originY)
+            const cropW = Math.max(1, Math.min(size.width - cropX, r.width))
+            const cropH = Math.max(1, Math.min(size.height - cropY, r.height))
+            const cropped = img.crop({ x: cropX, y: cropY, width: cropW, height: cropH })
+            const outPath = path.join(
+              os.tmpdir(),
+              `1cho_cap_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.png`
+            )
+            await fs.writeFile(outPath, cropped.toPNG())
+            snapshots.set(d.id, {
+              filePath: outPath,
+              dipWidth: d.bounds.width,
+              dipHeight: d.bounds.height
+            })
+          } catch (e) {
+            console.warn('[overlay] win snapshot crop 실패 displayId=' + d.id, e)
+          }
+        })
+      )
+      fs.unlink(full.filePath).catch(() => undefined)
     } catch (e) {
-      console.warn('[overlay] display snapshot 실패 displayId=' + d.id, e)
+      console.warn('[overlay] win 전체 스냅샷 실패:', e)
     }
+  } else {
+    // Mac: screencapture 프로세스는 독립적이라 병렬 실행 가능
+    await Promise.all(
+      displays.map(async (d) => {
+        try {
+          const res = await captureRegion(d.bounds.x, d.bounds.y, d.bounds.width, d.bounds.height)
+          if (!res.filePath) return
+          snapshots.set(d.id, {
+            filePath: res.filePath,
+            dipWidth: d.bounds.width,
+            dipHeight: d.bounds.height
+          })
+        } catch (e) {
+          console.warn('[overlay] display snapshot 실패 displayId=' + d.id, e)
+        }
+      })
+    )
   }
+
+  console.log(`[overlay] snapshots captured in ${Date.now() - t0}ms (${snapshots.size} displays)`)
 }
 
 async function disposeSnapshots(): Promise<void> {
@@ -487,14 +519,17 @@ export async function handleOverlaySelection(selection: RegionSelection): Promis
     let result: CaptureResult
 
     if (snap) {
-      // 스냅샷에서 crop — DIP 좌표(selection.x/y/w/h)를 물리 픽셀 좌표로 변환.
-      const sfx = snap.physWidth / snap.dipWidth
-      const sfy = snap.physHeight / snap.dipHeight
+      // 스냅샷에서 crop — 디코드는 이 시점에 (v0.9.1: 캡처 시점 디코드 비용 제거).
+      // DIP 좌표(selection.x/y/w/h)를 물리 픽셀 좌표로 변환.
+      const image = nativeImage.createFromPath(snap.filePath)
+      const { width: physWidth, height: physHeight } = image.getSize()
+      const sfx = physWidth / snap.dipWidth
+      const sfy = physHeight / snap.dipHeight
       const cropX = Math.max(0, Math.round(selection.x * sfx))
       const cropY = Math.max(0, Math.round(selection.y * sfy))
-      const cropW = Math.max(1, Math.min(snap.physWidth - cropX, Math.round(selection.width * sfx)))
-      const cropH = Math.max(1, Math.min(snap.physHeight - cropY, Math.round(selection.height * sfy)))
-      const cropped = snap.image.crop({ x: cropX, y: cropY, width: cropW, height: cropH })
+      const cropW = Math.max(1, Math.min(physWidth - cropX, Math.round(selection.width * sfx)))
+      const cropH = Math.max(1, Math.min(physHeight - cropY, Math.round(selection.height * sfy)))
+      const cropped = image.crop({ x: cropX, y: cropY, width: cropW, height: cropH })
       const buf = cropped.toPNG()
       const outPath = path.join(
         os.tmpdir(),
