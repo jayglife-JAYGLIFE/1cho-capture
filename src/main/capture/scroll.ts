@@ -113,7 +113,13 @@ async function captureAndMaybeAppend(): Promise<void> {
     if (isMac) {
       buf = await captureRegionMac(bounds.x, bounds.y, bounds.width, bounds.height)
     } else if (isWin) {
-      buf = await captureRegionWin(bounds.x, bounds.y, bounds.width, bounds.height)
+      // v0.9.2: desktopCapturer 우선 (PowerShell DPI 어긋남 버그 회피), 실패 시 PS 폴백
+      try {
+        const { captureRegionWinDC } = await import('./index')
+        buf = await captureRegionWinDC(bounds.x, bounds.y, bounds.width, bounds.height)
+      } catch {
+        buf = await captureRegionWin(bounds.x, bounds.y, bounds.width, bounds.height)
+      }
     } else {
       return
     }

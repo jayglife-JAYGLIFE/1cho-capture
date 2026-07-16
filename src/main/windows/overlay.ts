@@ -3,7 +3,7 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { promises as fs } from 'node:fs'
 import os from 'node:os'
-import { captureFullScreen, captureRegion } from '../capture'
+import { captureRegion } from '../capture'
 import { IPC } from '../../shared/constants'
 import type { CaptureResult, RegionSelection } from '../../shared/types'
 import { openEditorWithImage } from './editor'
@@ -396,63 +396,35 @@ async function capturePerDisplaySnapshots(): Promise<void> {
   const displays = screen.getAllDisplays()
   const t0 = Date.now()
 
-  if (process.platform === 'win32') {
-    // 가상 전체화면 1회 캡처 → 디스플레이별 crop
-    try {
-      const full = await captureFullScreen()
-      if (!full.filePath) return
-      const img = nativeImage.createFromPath(full.filePath)
-      const size = img.getSize()
-      // 가상 화면 원점 (물리 px) = 모든 디스플레이 물리 bounds 의 최소값
-      const physRects = displays.map((d) => screen.dipToScreenRect(null, d.bounds))
-      const originX = Math.min(...physRects.map((r) => r.x))
-      const originY = Math.min(...physRects.map((r) => r.y))
-      await Promise.all(
-        displays.map(async (d, i) => {
-          try {
-            const r = physRects[i]
-            const cropX = Math.max(0, r.x - originX)
-            const cropY = Math.max(0, r.y - originY)
-            const cropW = Math.max(1, Math.min(size.width - cropX, r.width))
-            const cropH = Math.max(1, Math.min(size.height - cropY, r.height))
-            const cropped = img.crop({ x: cropX, y: cropY, width: cropW, height: cropH })
-            const outPath = path.join(
-              os.tmpdir(),
-              `1cho_cap_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.png`
-            )
-            await fs.writeFile(outPath, cropped.toPNG())
-            snapshots.set(d.id, {
-              filePath: outPath,
-              dipWidth: d.bounds.width,
-              dipHeight: d.bounds.height
-            })
-          } catch (e) {
-            console.warn('[overlay] win snapshot crop 실패 displayId=' + d.id, e)
-          }
-        })
-      )
-      fs.unlink(full.filePath).catch(() => undefined)
-    } catch (e) {
-      console.warn('[overlay] win 전체 스냅샷 실패:', e)
-    }
-  } else {
-    // Mac: screencapture 프로세스는 독립적이라 병렬 실행 가능
-    await Promise.all(
-      displays.map(async (d) => {
-        try {
-          const res = await captureRegion(d.bounds.x, d.bounds.y, d.bounds.width, d.bounds.height)
-          if (!res.filePath) return
-          snapshots.set(d.id, {
-            filePath: res.filePath,
-            dipWidth: d.bounds.width,
-            dipHeight: d.bounds.height
-          })
-        } catch (e) {
-          console.warn('[overlay] display snapshot 실패 displayId=' + d.id, e)
+  // v0.9.2: Mac/Win 동일하게 디스플레이별 병렬 캡처.
+  // Mac 은 screencapture 프로세스 (독립적), Win 은 desktopCapturer (in-process,
+  // Electron 이 모니터별 DPI 직접 처리 → PowerShell DPI 어긋남 버그 원천 차단).
+  await Promise.all(
+    displays.map(async (d) => {
+      try {
+        let x = d.bounds.x
+        let y = d.bounds.y
+        let w = d.bounds.width
+        let h = d.bounds.height
+        if (process.platform === 'win32') {
+          const phys = screen.dipToScreenRect(null, d.bounds)
+          x = phys.x
+          y = phys.y
+          w = phys.width
+          h = phys.height
         }
-      })
-    )
-  }
+        const res = await captureRegion(x, y, w, h)
+        if (!res.filePath) return
+        snapshots.set(d.id, {
+          filePath: res.filePath,
+          dipWidth: d.bounds.width,
+          dipHeight: d.bounds.height
+        })
+      } catch (e) {
+        console.warn('[overlay] display snapshot 실패 displayId=' + d.id, e)
+      }
+    })
+  )
 
   console.log(`[overlay] snapshots captured in ${Date.now() - t0}ms (${snapshots.size} displays)`)
 }
