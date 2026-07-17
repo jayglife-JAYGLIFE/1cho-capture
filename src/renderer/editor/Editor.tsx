@@ -282,12 +282,14 @@ export function Editor(): JSX.Element {
         strokeWidth
       })
     } else if (tool === 'text') {
+      // v0.9.3: 빈 텍스트로 생성 → 그 자리에 인라인 입력창이 뜨고 바로 타이핑.
+      // 입력 없이 닫으면 commitTextEdit 에서 자동 제거됨.
       const text: Shape = {
         id,
         tool: 'text',
         x: pos.x,
         y: pos.y,
-        text: '텍스트',
+        text: '',
         fontSize: Math.max(14, strokeWidth * 4),
         color,
         strokeWidth
@@ -296,6 +298,17 @@ export function Editor(): JSX.Element {
       setEditingTextId(id)
       setDrafting(null)
     }
+  }
+
+  // v0.9.3: 인라인 텍스트 편집 커밋 — 빈 값이면 도형 자체를 제거
+  const commitTextEdit = (id: string, value: string): void => {
+    const t = value.replace(/\s+$/, '')
+    setShapes((prev) =>
+      t.trim().length > 0
+        ? prev.map((p) => (p.id === id && p.tool === 'text' ? { ...p, text: t } : p))
+        : prev.filter((p) => p.id !== id)
+    )
+    setEditingTextId(null)
   }
 
   const onMouseMove = (e: Konva.KonvaEventObject<MouseEvent>): void => {
@@ -711,12 +724,9 @@ export function Editor(): JSX.Element {
               </Layer>
             )}
             <Layer>
-              {otherShapes.map((s) => renderShape(s, editingTextId === s.id, (newText) => {
-                setShapes((prev) =>
-                  prev.map((p) => (p.id === s.id && p.tool === 'text' ? { ...p, text: newText } : p))
-                )
-                setEditingTextId(null)
-              }))}
+              {otherShapes.map((s) =>
+                renderShape(s, editingTextId === s.id, () => setEditingTextId(s.id))
+              )}
             </Layer>
             {/* v0.7.2: 자르기 미리보기 오버레이 */}
             {pendingCrop && img && (() => {
@@ -773,6 +783,65 @@ export function Editor(): JSX.Element {
         )}
 
         {/* v0.8.2/v0.8.7: 표시 줌이 100% 외일 때 안내 — 저장은 항상 원본 화질 */}
+        {/* v0.9.3: 인라인 텍스트 입력창 — 클릭 위치에 바로 타이핑 */}
+        {editingTextId &&
+          img &&
+          (() => {
+            const s = shapes.find((sh) => sh.id === editingTextId)
+            if (!s || s.tool !== 'text') return null
+            return (
+              <textarea
+                key={s.id}
+                autoFocus
+                defaultValue={s.text}
+                placeholder="텍스트 입력"
+                rows={1}
+                spellCheck={false}
+                style={{
+                  position: 'absolute',
+                  left: pan.x + s.x * scale,
+                  top: pan.y + s.y * scale,
+                  fontSize: s.fontSize * scale,
+                  lineHeight: 1.25,
+                  fontWeight: 700,
+                  color: s.color,
+                  caretColor: s.color,
+                  background: 'rgba(0,0,0,0.45)',
+                  border: '1.5px dashed #3B82F6',
+                  borderRadius: 4,
+                  outline: 'none',
+                  padding: '2px 6px',
+                  margin: 0,
+                  minWidth: 140,
+                  minHeight: s.fontSize * scale * 1.4,
+                  resize: 'both',
+                  overflow: 'hidden',
+                  whiteSpace: 'pre',
+                  zIndex: 30
+                }}
+                onFocus={(e) => e.currentTarget.select()}
+                onKeyDown={(e) => {
+                  // 편집기 전역 단축키(Ctrl+Z 등)와 충돌 방지
+                  e.stopPropagation()
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    e.currentTarget.blur()
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault()
+                    e.currentTarget.blur()
+                  }
+                }}
+                onInput={(e) => {
+                  // 입력에 맞춰 높이 자동 확장 (Shift+Enter 줄바꿈 지원)
+                  const el = e.currentTarget
+                  el.style.height = 'auto'
+                  el.style.height = `${el.scrollHeight}px`
+                }}
+                onBlur={(e) => commitTextEdit(s.id, e.currentTarget.value)}
+              />
+            )
+          })()}
+
         {img && (scale < 0.99 || scale > 1.05) && (
           <div
             className="absolute top-3 right-3 bg-black/75 text-white text-[11px] px-3 py-1.5 rounded-md shadow pointer-events-none flex items-center gap-1.5"
@@ -856,7 +925,7 @@ function normalize(s: Shape & { tool: 'mosaic' | 'rect' }): {
 function renderShape(
   s: Shape,
   isEditingText: boolean,
-  onTextCommit: (t: string) => void
+  onStartEdit: () => void
 ): JSX.Element | null {
   switch (s.tool) {
     case 'pen':
@@ -925,20 +994,10 @@ function renderShape(
         />
       )
     case 'text':
+      // v0.9.3: 편집 중엔 Konva Text 를 숨기고 HTML textarea 오버레이가 대신 표시됨.
+      // (기존 window.prompt 방식은 Electron 이 prompt 를 지원하지 않아 동작 불가였음)
       if (isEditingText) {
-        return (
-          <Text
-            key={s.id}
-            x={s.x}
-            y={s.y}
-            text={s.text}
-            fontSize={s.fontSize}
-            fill={s.color}
-            listening={false}
-            onDblClick={() => undefined}
-            fontStyle="bold"
-          />
-        )
+        return null
       }
       return (
         <Text
@@ -950,10 +1009,7 @@ function renderShape(
           fill={s.color}
           listening={true}
           fontStyle="bold"
-          onDblClick={() => {
-            const next = window.prompt('텍스트 입력', s.text)
-            if (next != null) onTextCommit(next)
-          }}
+          onDblClick={() => onStartEdit()}
         />
       )
     case 'mosaic':
