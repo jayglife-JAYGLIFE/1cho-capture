@@ -25,6 +25,9 @@ interface SnapshotEntry {
   dipHeight: number
 }
 const snapshots = new Map<number, SnapshotEntry>()
+// v0.9.4: 비동기 스냅샷 세션 구분 — ESC 취소 후 뒤늦게 완료된 캡처가
+// 다음 세션에 끼어들지 않도록 세대 번호로 가드
+let snapshotGeneration = 0
 
 /**
  * v0.3.1 UX 개편: 맥 Cmd+Shift+4 처럼 "라이브 화면" 위에 투명 오버레이만 띄우고,
@@ -211,13 +214,11 @@ function showOverlayEntry(entry: OverlayEntry, display: Display): void {
     console.warn('[overlay] setAlwaysOnTop 실패:', e)
   }
 
-  // 3. init payload 전송 (v0.9.0: 스냅샷 file:// URL 포함)
-  const snap = snapshots.get(entry.displayId)
+  // 3. init payload 전송 (v0.9.4: 배경은 스냅샷 완료 시 OVERLAY_BACKGROUND 로 늦게 전달)
   entry.window.webContents.send(IPC.OVERLAY_INIT, {
     displayId: entry.displayId,
     bounds: display.bounds,
-    scaleFactor: display.scaleFactor,
-    backgroundUrl: snap ? pathToFileURL(snap.filePath).href : undefined
+    scaleFactor: display.scaleFactor
   })
 
   // 4. show — v0.8.5: focus() 제거. 오버레이가 포커스를 가져가면 다른 앱의
@@ -287,9 +288,12 @@ export async function openRegionOverlay(): Promise<void> {
   isOpen = true
   hideToolbarForCapture()
 
-  // v0.9.0: 오버레이 창 띄우기 *전에* 각 디스플레이 즉시 스냅샷 캡처.
-  // 오버레이 활성화로 팝업이 닫히기 전 상태를 확보하는 게 목적.
-  await capturePerDisplaySnapshots()
+  // v0.9.4: 오버레이를 먼저 즉시 표시하고 (투명 + 포커스 안 뺏음 → 팝업 유지,
+  // 캡처에 안 찍힘), 스냅샷은 백그라운드에서 찍어 완료되는 대로 배경으로 전달.
+  // 체감 반응속도가 스냅샷 캡처 시간(~150-300ms)만큼 빨라짐.
+  capturePerDisplaySnapshots().catch((e) =>
+    console.warn('[overlay] 백그라운드 스냅샷 실패:', e)
+  )
 
   try {
     let shownCount = 0
@@ -393,33 +397,58 @@ export function cancelRegionOverlay(): void {
  */
 async function capturePerDisplaySnapshots(): Promise<void> {
   await disposeSnapshots()
+  const gen = ++snapshotGeneration
   const displays = screen.getAllDisplays()
   const t0 = Date.now()
 
   // v0.9.2: Mac/Win 동일하게 디스플레이별 병렬 캡처.
-  // Mac 은 screencapture 프로세스 (독립적), Win 은 desktopCapturer (in-process,
-  // Electron 이 모니터별 DPI 직접 처리 → PowerShell DPI 어긋남 버그 원천 차단).
+  // Mac 은 screencapture (v0.9.4: 최종 경로에 직접 저장, 이중 I/O 제거),
+  // Win 은 desktopCapturer (Electron 이 모니터별 DPI 직접 처리).
+  // v0.9.4: 각 디스플레이 캡처가 끝나는 즉시 해당 오버레이에 배경 URL 전달.
   await Promise.all(
     displays.map(async (d) => {
       try {
-        let x = d.bounds.x
-        let y = d.bounds.y
-        let w = d.bounds.width
-        let h = d.bounds.height
-        if (process.platform === 'win32') {
+        let filePath: string
+        if (process.platform === 'darwin') {
+          const outPath = path.join(
+            os.tmpdir(),
+            `1cho_cap_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.png`
+          )
+          const { captureRegionMacToFile } = await import('../capture/mac')
+          await captureRegionMacToFile(
+            d.bounds.x,
+            d.bounds.y,
+            d.bounds.width,
+            d.bounds.height,
+            outPath
+          )
+          filePath = outPath
+        } else {
           const phys = screen.dipToScreenRect(null, d.bounds)
-          x = phys.x
-          y = phys.y
-          w = phys.width
-          h = phys.height
+          const res = await captureRegion(phys.x, phys.y, phys.width, phys.height)
+          if (!res.filePath) return
+          filePath = res.filePath
         }
-        const res = await captureRegion(x, y, w, h)
-        if (!res.filePath) return
+
+        // 세션이 바뀌었으면 (ESC 취소 후 등) 결과 폐기
+        if (gen !== snapshotGeneration) {
+          fs.unlink(filePath).catch(() => undefined)
+          return
+        }
+
         snapshots.set(d.id, {
-          filePath: res.filePath,
+          filePath,
           dipWidth: d.bounds.width,
           dipHeight: d.bounds.height
         })
+
+        // 해당 디스플레이 오버레이에 배경 즉시 전달
+        const entry = entries.find((e) => e.displayId === d.id)
+        if (entry && !entry.window.isDestroyed() && entry.window.isVisible()) {
+          entry.window.webContents.send(IPC.OVERLAY_BACKGROUND, {
+            backgroundUrl: pathToFileURL(filePath).href
+          })
+        }
       } catch (e) {
         console.warn('[overlay] display snapshot 실패 displayId=' + d.id, e)
       }
@@ -430,6 +459,7 @@ async function capturePerDisplaySnapshots(): Promise<void> {
 }
 
 async function disposeSnapshots(): Promise<void> {
+  snapshotGeneration++ // 진행 중인 비동기 캡처 결과 무효화
   const toRemove = Array.from(snapshots.values())
   snapshots.clear()
   await Promise.all(
@@ -487,7 +517,10 @@ export async function handleOverlaySelection(selection: RegionSelection): Promis
   }
 
   try {
-    const snap = snapshots.get(selection.displayId)
+    // v0.9.4: 드래그가 스냅샷 도착 전에 시작됐다면 (snapshotOk=false) 스냅샷에
+    // 드래그 UI가 찍혀있을 수 있으므로 라이브 캡처로 처리
+    const snap =
+      selection.snapshotOk === false ? undefined : snapshots.get(selection.displayId)
     let result: CaptureResult
 
     if (snap) {

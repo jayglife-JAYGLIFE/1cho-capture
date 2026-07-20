@@ -6,14 +6,15 @@ export interface OverlayBridge {
       displayId: number
       bounds: { x: number; y: number; width: number; height: number }
       scaleFactor: number
-      /**
-       * v0.9.0: 스냅샷 캡처 모드에서 이 디스플레이의 프리캡처 이미지 URL.
-       * 존재하면 오버레이는 이 이미지를 배경으로 표시하고, 드래그 완료 시엔 이 이미지를
-       * crop 해서 결과를 만든다 (실제 화면은 다시 캡처하지 않음).
-       */
-      backgroundUrl?: string
     }) => void
   ) => void
+  /**
+   * v0.9.4: 오버레이는 즉시 표시하고, 스냅샷(팝업 보존용 프리캡처)이 준비되면
+   * 이 콜백으로 배경 이미지 URL이 늦게 도착한다 (~100-300ms).
+   * 배경 도착 전에 드래그를 시작한 경우 renderer 는 submit 시 snapshotOk=false 를
+   * 보내고, main 은 스냅샷 대신 라이브 캡처로 처리한다.
+   */
+  onBackground: (cb: (data: { backgroundUrl: string }) => void) => void
   submit: (sel: RegionSelection) => Promise<void>
   cancel: () => Promise<void>
 }

@@ -34,6 +34,8 @@ export const DEFAULT_SETTINGS: Omit<AppSettings, 'saveFolder'> = {
 export const IPC = {
   // Main → Renderer
   OVERLAY_INIT: 'overlay:init',
+  // v0.9.4: 스냅샷이 준비되면 배경 이미지 URL을 늦게 전달 (오버레이는 즉시 표시)
+  OVERLAY_BACKGROUND: 'overlay:background',
   EDITOR_INIT: 'editor:init',
   SETTINGS_INIT: 'settings:init',
 

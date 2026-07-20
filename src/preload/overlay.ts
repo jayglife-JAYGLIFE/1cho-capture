@@ -6,6 +6,9 @@ const bridge: OverlayBridge = {
   onInit: (cb) => {
     ipcRenderer.on(IPC.OVERLAY_INIT, (_, data) => cb(data))
   },
+  onBackground: (cb) => {
+    ipcRenderer.on(IPC.OVERLAY_BACKGROUND, (_, data) => cb(data))
+  },
   submit: (sel) => ipcRenderer.invoke(IPC.OVERLAY_SELECT, sel),
   cancel: () => ipcRenderer.invoke(IPC.OVERLAY_CANCEL)
 }

@@ -58,6 +58,12 @@ export interface RegionSelection {
   y: number
   width: number
   height: number
+  /**
+   * v0.9.4: 드래그 시작 시점에 스냅샷 배경이 표시되고 있었는지.
+   * false 면 드래그 시각 요소(dim/테두리)가 스냅샷에 찍혀있을 수 있으므로
+   * main 은 스냅샷 crop 대신 라이브 캡처를 사용한다.
+   */
+  snapshotOk?: boolean
 }
 
 export interface CaptureResult {

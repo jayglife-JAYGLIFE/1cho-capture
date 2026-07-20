@@ -11,7 +11,6 @@ interface InitData {
   displayId: number
   bounds: { x: number; y: number; width: number; height: number }
   scaleFactor: number
-  backgroundUrl?: string
 }
 
 interface Point {
@@ -27,18 +26,35 @@ interface Point {
  */
 export function Overlay(): JSX.Element {
   const [init, setInit] = useState<InitData | null>(null)
+  const [backgroundUrl, setBackgroundUrl] = useState<string | null>(null)
   const [start, setStart] = useState<Point | null>(null)
   const [current, setCurrent] = useState<Point | null>(null)
   const [mouse, setMouse] = useState<Point | null>(null)
   const draggingRef = useRef(false)
+  // v0.9.4: 배경 준비 여부를 ref 로도 추적 (드래그 시작 시점 판단용)
+  const bgReadyRef = useRef(false)
+  const dragStartedWithBgRef = useRef(false)
 
   useEffect(() => {
     window.overlay.onInit((data) => {
       setInit(data)
+      setBackgroundUrl(null)
+      bgReadyRef.current = false
+      dragStartedWithBgRef.current = false
       setStart(null)
       setCurrent(null)
       setMouse(null)
       draggingRef.current = false
+    })
+
+    // v0.9.4: 스냅샷 배경은 오버레이 표시 후 늦게 도착 (~100-300ms).
+    // 도착 전까지는 완전 투명이라 라이브 화면이 그대로 보임 → 스냅샷에 UI 안 찍힘.
+    window.overlay.onBackground((data) => {
+      // 배경 도착 전에 이미 드래그를 시작했다면 그 스냅샷엔 드래그 UI(dim/테두리)가
+      // 찍혀있을 수 있으므로 적용하지 않음 → submit 시 snapshotOk=false 로 라이브 캡처
+      if (draggingRef.current && !dragStartedWithBgRef.current) return
+      setBackgroundUrl(data.backgroundUrl)
+      bgReadyRef.current = true
     })
 
     const onKey = (e: KeyboardEvent): void => {
@@ -50,6 +66,7 @@ export function Overlay(): JSX.Element {
 
   const onMouseDown = (e: React.MouseEvent): void => {
     draggingRef.current = true
+    dragStartedWithBgRef.current = bgReadyRef.current
     setStart({ x: e.clientX, y: e.clientY })
     setCurrent({ x: e.clientX, y: e.clientY })
   }
@@ -78,7 +95,8 @@ export function Overlay(): JSX.Element {
       x: sel.x,
       y: sel.y,
       width: sel.width,
-      height: sel.height
+      height: sel.height,
+      snapshotOk: dragStartedWithBgRef.current
     })
   }
 
@@ -112,9 +130,9 @@ export function Overlay(): JSX.Element {
         background: 'rgba(0,0,0,0.003)'
       }}
     >
-      {init.backgroundUrl && (
+      {backgroundUrl && (
         <img
-          src={init.backgroundUrl}
+          src={backgroundUrl}
           alt=""
           draggable={false}
           className="pointer-events-none"
@@ -163,7 +181,9 @@ export function Overlay(): JSX.Element {
         </div>
       )}
 
-      {!rect && mouse && (
+      {/* v0.9.4: 좌표 배지/안내 배너는 스냅샷 배경 도착 후에만 표시
+          (도착 전에 표시하면 백그라운드 스냅샷 캡처에 UI가 찍힘) */}
+      {backgroundUrl && !rect && mouse && (
         <div
           className="pointer-events-none"
           style={{
@@ -182,23 +202,25 @@ export function Overlay(): JSX.Element {
         </div>
       )}
 
-      <div
-        className="pointer-events-none"
-        style={{
-          position: 'absolute',
-          top: 14,
-          left: '50%',
-          transform: 'translateX(-50%)',
-          background: 'rgba(0,0,0,0.7)',
-          color: 'white',
-          padding: '6px 14px',
-          borderRadius: 999,
-          fontSize: 13,
-          fontWeight: 500
-        }}
-      >
-        드래그하여 영역 선택 · ESC / 우클릭 취소
-      </div>
+      {backgroundUrl && (
+        <div
+          className="pointer-events-none"
+          style={{
+            position: 'absolute',
+            top: 14,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: 'rgba(0,0,0,0.7)',
+            color: 'white',
+            padding: '6px 14px',
+            borderRadius: 999,
+            fontSize: 13,
+            fontWeight: 500
+          }}
+        >
+          드래그하여 영역 선택 · ESC / 우클릭 취소
+        </div>
+      )}
     </div>
   )
 }
