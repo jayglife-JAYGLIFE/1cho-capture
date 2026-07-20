@@ -70,11 +70,16 @@ function getOrCreatePs(): PsSession {
     `Add-Type -MemberDefinition '[DllImport(\"user32.dll\")] public static extern bool SetProcessDPIAware();' -Name WinDPI -Namespace Util -PassThru | Out-Null\n` +
     `[Util.WinDPI]::SetProcessDPIAware() | Out-Null\n`
 
+  // v0.9.5: 자동 스크롤 캡처용 — 마우스 휠 이벤트 주입 (커서 아래 창으로 전달됨)
+  const wheelApi =
+    `Add-Type -MemberDefinition '[DllImport(\"user32.dll\")] public static extern void mouse_event(uint dwFlags, int dx, int dy, int dwData, System.UIntPtr dwExtraInfo);' -Name Wheel -Namespace Util -PassThru | Out-Null\n`
+
   proc.stdin.write(
     `[Console]::InputEncoding = [System.Text.Encoding]::UTF8\n` +
       `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8\n` +
       `$OutputEncoding = [System.Text.Encoding]::UTF8\n` +
       dpiAware +
+      wheelApi +
       `Add-Type -AssemblyName System.Drawing\n` +
       `Add-Type -AssemblyName System.Windows.Forms\n`
   )
@@ -177,6 +182,18 @@ $bmp.Dispose()
   const buf = await fs.readFile(p)
   await fs.unlink(p).catch(() => undefined)
   return buf
+}
+
+/**
+ * v0.9.5: 마우스 휠 "아래로" 이벤트 주입 (자동 스크롤 캡처용).
+ * 이벤트는 OS 가 현재 커서 아래의 창으로 전달하므로, 캡처 영역 위에 커서가
+ * 있으면 그 창이 스크롤된다. 커서를 옮기지 않아 DPI 좌표 변환 이슈가 없음.
+ * @param notches 휠 노치 수 (1 노치 = 120)
+ */
+export async function sendWheelDownWin(notches: number): Promise<void> {
+  const delta = -120 * Math.max(1, Math.round(notches))
+  // MOUSEEVENTF_WHEEL = 0x0800
+  await runPsScript(`[Util.Wheel]::mouse_event(0x0800, 0, 0, ${delta}, [UIntPtr]::Zero)`, 3000)
 }
 
 export function destroyPowerShell(): void {

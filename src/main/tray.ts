@@ -104,11 +104,16 @@ export function rebuildMenu(): void {
         else openCaptureBox()
       }
     },
-    {
-      label: '스크롤 캡처',
-      accelerator: 'Ctrl+Shift+V',
-      click: () => startScrollCapture()
-    },
+    // v0.9.5: 스크롤 캡처는 Windows 전용 (자동 스크롤 방식)
+    ...(process.platform === 'win32'
+      ? [
+          {
+            label: '스크롤 캡처 (자동)',
+            accelerator: 'Ctrl+Shift+V',
+            click: () => startScrollCapture()
+          } as MenuItemConstructorOptions
+        ]
+      : []),
     { type: 'separator' },
     {
       // v0.8.9: 팝업/드롭다운 유지 캡처의 정석 해법 — 창 안 띄우고 시간만 기다림

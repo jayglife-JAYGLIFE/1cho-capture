@@ -18,8 +18,8 @@ let pendingStatus: ScrollControllerStatus | null = null
 export function openScrollController(): void {
   if (win && !win.isDestroyed()) {
     positionWindow(win)
-    win.show()
-    win.focus()
+    // v0.9.5: 포커스를 가져가면 자동 스크롤 휠 이벤트가 대상 창으로 안 갈 수 있어 inactive 표시
+    win.showInactive()
     return
   }
 
@@ -39,6 +39,8 @@ export function openScrollController(): void {
     minimizable: false,
     maximizable: false,
     fullscreenable: false,
+    // v0.9.5: 자동 스크롤 중 대상 창의 포커스/휠 라우팅을 방해하지 않도록
+    focusable: false,
     skipTaskbar: true,
     hasShadow: true,
     backgroundColor: '#00000000',
@@ -60,8 +62,7 @@ export function openScrollController(): void {
       pendingStatus = null
     }
     if (win && !win.isDestroyed()) {
-      win.show()
-      win.focus()
+      win.showInactive()
     }
   })
 

@@ -83,7 +83,12 @@ export function Settings(): JSX.Element {
       <section>
         <h2 className="text-sm font-semibold text-gray-300 mb-2">단축키</h2>
         <div className="space-y-2">
-          {(Object.keys(HOTKEY_LABELS) as Array<keyof AppSettings['hotkeys']>).map((k) => (
+          {(Object.keys(HOTKEY_LABELS) as Array<keyof AppSettings['hotkeys']>)
+            .filter(
+              // v0.9.5: 스크롤 캡처는 Windows 전용 → Mac 설정 화면에서 숨김
+              (k) => !(k === 'scroll' && navigator.platform.toUpperCase().includes('MAC'))
+            )
+            .map((k) => (
             <div
               key={k}
               className="flex items-center justify-between bg-gray-800 rounded px-3 py-2"

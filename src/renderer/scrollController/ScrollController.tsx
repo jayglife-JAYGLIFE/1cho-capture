@@ -84,7 +84,7 @@ export function ScrollController(): JSX.Element {
           paddingRight: 10
         }}
       >
-        타겟 앱을 스크롤하세요
+        자동 스크롤 중 · 마우스를 움직이지 마세요 · 끝에 닿으면 자동 완료
       </span>
 
       {/* 버튼들 */}

@@ -42,7 +42,10 @@ export function registerHotkeys(cfg: HotkeyConfig): RegisterResult {
       openCaptureBox()
     }
   })
-  tryRegister(cfg.scroll, () => startScrollCapture())
+  // v0.9.5: 스크롤 캡처는 Windows 전용 — Mac 은 단축키 자체를 등록하지 않음
+  if (process.platform === 'win32') {
+    tryRegister(cfg.scroll, () => startScrollCapture())
+  }
   tryRegister(cfg.repeat, async () => {
     const last = getLastCapture()
     if (last) await openEditorWithImage(last)

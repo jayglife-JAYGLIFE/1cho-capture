@@ -15,13 +15,17 @@ import {
 import type { CaptureResult } from '../../shared/types'
 
 /**
- * v0.7.0 스크롤 캡처 (A안 — 반자동):
+ * v0.9.5 스크롤 캡처 (알캡처 방식 — Windows 전용 자동 스크롤):
  *
  * 1. 사용자가 Ctrl+Shift+V → 기존 region 오버레이로 영역 선택
- * 2. 선택 완료 → scrollController 창 표시 + 주기적 폴링 시작
- * 3. 250ms마다 해당 영역 캡처 → 이전 프레임과 diff → 변경됐으면 append
- * 4. 사용자가 [완료] → 프레임들을 row-hash 기반 overlap 감지로 이어붙여 편집기
- * 5. [취소] → 세션 버림
+ * 2. 선택 완료 → scrollController 창 표시 + 자동 스크롤 루프 시작
+ * 3. 마우스 휠 이벤트를 주입해 프로그램이 직접 스크롤 (커서 아래 창으로 전달)
+ *    → 한 스텝마다 영역 캡처 → row-hash overlap 으로 이어붙임
+ * 4. 스크롤해도 화면이 안 변하면(바닥 도달) 자동 완료 → 편집기
+ *    사용자가 [완료]/[취소] 로 중간에 끝낼 수도 있음
+ *
+ * Mac 은 OS 이벤트 주입에 별도 권한이 필요해 v0.9.5 부터 기능 제거.
+ * (수동 스크롤 방식은 v0.7.0~v0.9.4 참고)
  */
 
 interface ScrollFrame {
@@ -43,16 +47,27 @@ interface ScrollSession {
   isFinishing: boolean
 }
 
-const POLL_INTERVAL_MS = 280
-
 let session: ScrollSession | null = null
 let scrollMode = false
 
 const isMac = process.platform === 'darwin'
 const isWin = process.platform === 'win32'
 
-/** Ctrl+Shift+V → 오버레이 띄우고 scroll 모드로 표시 */
+/** Ctrl+Shift+V → 오버레이 띄우고 scroll 모드로 표시 (Windows 전용) */
 export async function startScrollCapture(): Promise<void> {
+  if (isMac) {
+    // v0.9.5: Mac 은 스크롤 캡처 미지원 (UI 에서도 숨김. 구버전 설정의 단축키 대비 가드)
+    try {
+      const { Notification } = await import('electron')
+      new Notification({
+        title: '1초캡처',
+        body: '스크롤 캡처는 Windows 전용 기능입니다.'
+      }).show()
+    } catch {
+      /* ignore */
+    }
+    return
+  }
   if (session) return // 이미 진행 중
   scrollMode = true
   try {
@@ -98,10 +113,49 @@ export async function beginScrollSession(
   // 첫 프레임 즉시 캡처
   await captureAndMaybeAppend()
 
-  // 주기적 폴링
-  session.pollTimer = setInterval(() => {
-    captureAndMaybeAppend().catch((e) => console.warn('[scroll] poll capture err', e))
-  }, POLL_INTERVAL_MS)
+  // v0.9.5: 자동 스크롤 루프 (알캡처 방식) — 휠 이벤트 주입 → 대기 → 캡처 반복
+  autoScrollLoop(session).catch((e) => console.warn('[scroll] auto loop err', e))
+}
+
+/**
+ * 휠 다운 → 렌더링 안정화 대기 → 캡처 를 반복.
+ * 연속 IDLE_LIMIT 회 동안 새 프레임이 안 생기면 바닥 도달로 보고 자동 완료.
+ */
+async function autoScrollLoop(s: ScrollSession): Promise<void> {
+  const { sendWheelDownWin } = await import('./win')
+  const WHEEL_NOTCHES = 3 // 한 스텝에 3노치 (약 화면 1/3 ~ 1/2)
+  const SETTLE_MS = 320 // 스크롤 후 렌더링/스무스 스크롤 안정화 대기
+  const IDLE_LIMIT = 3 // 이 횟수만큼 변화 없으면 바닥으로 판단
+  const MAX_STEPS = 400 // 무한 페이지 안전장치
+
+  let idle = 0
+  for (let step = 0; step < MAX_STEPS; step++) {
+    // 세션이 취소/완료됐으면 종료
+    if (session !== s || s.isFinishing) return
+
+    try {
+      await sendWheelDownWin(WHEEL_NOTCHES)
+    } catch (e) {
+      console.warn('[scroll] wheel 주입 실패:', e)
+    }
+    await new Promise((r) => setTimeout(r, SETTLE_MS))
+    if (session !== s || s.isFinishing) return
+
+    const before = s.frames.length
+    await captureAndMaybeAppend()
+    if (s.frames.length === before) {
+      idle++
+      if (idle >= IDLE_LIMIT) {
+        console.log('[scroll] 바닥 도달 → 자동 완료 (frames:', s.frames.length, ')')
+        await finishScrollCapture()
+        return
+      }
+    } else {
+      idle = 0
+    }
+  }
+  console.warn('[scroll] MAX_STEPS 도달 → 자동 완료')
+  await finishScrollCapture()
 }
 
 async function captureAndMaybeAppend(): Promise<void> {

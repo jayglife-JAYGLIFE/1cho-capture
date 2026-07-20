@@ -13,11 +13,14 @@ interface Btn {
   shortcut: string
 }
 
+// v0.9.5: 스크롤 캡처(자동 스크롤)는 Windows 전용
+const IS_MAC = navigator.platform.toUpperCase().includes('MAC')
+
 const BUTTONS: Btn[] = [
   { id: 'region', label: '영역', icon: '▢', shortcut: 'Ctrl+Shift+C' },
   { id: 'fullscreen', label: '전체', icon: '◻', shortcut: 'Ctrl+Shift+Z' },
   { id: 'window', label: '창', icon: '▤', shortcut: 'Ctrl+Shift+X' },
-  { id: 'scroll', label: '스크롤', icon: '⇣', shortcut: 'Ctrl+Shift+V' }
+  ...(IS_MAC ? [] : [{ id: 'scroll', label: '스크롤', icon: '⇣', shortcut: 'Ctrl+Shift+V' } as Btn])
 ]
 
 export function Toolbar(): JSX.Element {
